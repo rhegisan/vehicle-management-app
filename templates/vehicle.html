@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Add Vehicle Maintenance{% endblock %}
+
+{% block content %}
+  <div class="container">
+    <h2>Add Vehicle Maintenance</h2>
+    <form method="POST" enctype="multipart/form-data">
+      <div class="form-group">
+        <label for="vehicle_number">Vehicle Number</label>
+        <input type="text" class="form-control" id="vehicle_number" name="vehicle_number" required>
+      </div>
+
+      <div class="form-group">
+        <label for="vehicle_type">Vehicle Type</label>
+        <input type="text" class="form-control" id="vehicle_type" name="vehicle_type" required>
+      </div>
+
+      <div class="form-group">
+        <label for="vehicle_make">Vehicle Make</label>
+        <input type="text" class="form-control" id="vehicle_make" name="vehicle_make" required>
+      </div>
+
+      <div class="form-group">
+        <label for="vehicle_model">Vehicle Model</label>
+        <input type="text" class="form-control" id="vehicle_model" name="vehicle_model" required>
+      </div>
+
+      <div class="form-group">
+        <label for="license_plate_number">License Plate Number</label>
+        <input type="text" class="form-control" id="license_plate_number" name="license_plate_number" required>
+      </div>
+
+      <div class="form-group">
+        <label for="maintenance_date">Maintenance Date</label>
+        <input type="date" class="form-control" id="maintenance_date" name="maintenance_date" required>
+      </div>
+
+      <div class="form-group">
+        <label for="bill_image">Upload Bill Image (PDF, JPG, PNG, etc.)</label>
+        <input type="file" class="form-control" id="bill_image" name="bill_image" required>
+        <small class="form-text text-muted">Upload the bill image (PDF, Image, etc.)</small>
+      </div>
+
+      <button type="submit" class="btn btn-primary">Add Maintenance</button>
+    </form>
+  </div>
+{% endblock %}

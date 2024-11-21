@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <div class="container">
+    <h1>My Vehicles</h1>
+    <table class="table table-striped">
+      <thead>
+        <tr>
+          <th scope="col">Vehicle Type</th>
+          <th scope="col">Vehicle Make</th>
+          <th scope="col">Vehicle Model</th>
+          <th scope="col">License Plate Number</th>
+          <th scope="col">Maintenance Date</th>
+          <th scope="col">Bill Image</th>
+          <th scope="col">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for vehicle in vehicles %}
+          <tr>
+            <td>{{ vehicle.vehicle_type }}</td>
+            <td>{{ vehicle.vehicle_make }}</td>
+            <td>{{ vehicle.vehicle_model }}</td>
+            <td>{{ vehicle.license_plate_number }}</td>
+            <td>{{ vehicle.maintenance_date[:10] }}</td>  <!-- Display only date portion -->
+            <td>
+              {% if vehicle.image_url %}
+                <a href="{{ vehicle.image_url }}" class="btn btn-info" target="_blank">Download</a>
+              {% else %}
+                No bill image uploaded.
+              {% endif %}
+            </td>
+            <td>
+              <a href="{{ url_for('edit_vehicle', vehicle_number=vehicle.vehicle_number) }}" class="btn btn-warning">Edit</a>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="7">No vehicles found.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}
