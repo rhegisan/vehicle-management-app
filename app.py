@@ -8,7 +8,9 @@ from botocore.exceptions import ClientError, EndpointConnectionError
 import concurrent.futures
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from flask import make_response
-
+import json
+import os
+import zipfile
 
 app = Flask(__name__)
 
@@ -225,19 +227,38 @@ def check_or_create_sns_topic():
                 if retries == 5:
                     print("SNS Topic creation failed after 5 retries.")
 
+def zip_lambda_function(source_dir, output_zip):
+    """
+    Zips the contents of a directory for Lambda deployment.
+    """
+    with zipfile.ZipFile(output_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for root, dirs, files in os.walk(source_dir):
+            for file in files:
+                file_path = os.path.join(root, file)
+                arcname = os.path.relpath(file_path, start=source_dir)
+                zipf.write(file_path, arcname)
+
 def check_or_create_lambda_function():
     function_name = 'VehicleMaintenanceLambda'
     try:
-        # Try to get the Lambda function's details to check if it exists
+        # Check if the Lambda function exists
         lambda_client.get_function(FunctionName=function_name)
         print(f"Lambda function '{function_name}' already exists.")
     except lambda_client.exceptions.ResourceNotFoundException:
         print(f"Lambda function '{function_name}' does not exist. Creating it...")
         
-        # Simulating the function creation (you'll need to package and upload your Lambda code)
-        with open('lambda_function.zip', 'rb') as zip_file:
+        # Path to Lambda code
+        source_dir = '.'  # Replace with your Lambda code directory
+        output_zip = 'lambda_function.zip'
+
+        # Zip the Lambda function code
+        zip_lambda_function(source_dir, output_zip)
+        
+        # Read zip file for Lambda function creation
+        with open(output_zip, 'rb') as zip_file:
             zip_data = zip_file.read()
 
+        # Create the Lambda function
         response = lambda_client.create_function(
             FunctionName=function_name,
             Runtime='python3.11',
@@ -247,10 +268,9 @@ def check_or_create_lambda_function():
             Timeout=30,
             MemorySize=128
         )
-        function_arn = response['FunctionArn']
+        print(f"Lambda function '{function_name}' created. Waiting for confirmation...")
 
         # Poll to confirm that the Lambda function is created
-        print(f"Waiting for Lambda function '{function_name}' to be created...")
         confirm_creation = False
         retries = 0
         while retries < 5 and not confirm_creation:
@@ -263,17 +283,99 @@ def check_or_create_lambda_function():
                 retries += 1
                 if retries == 5:
                     print("Lambda function creation failed after 5 retries.")
+    else:
+        # Update the existing Lambda function code
+        print(f"Updating code for Lambda function '{function_name}'...")
+        
+        # Path to Lambda code
+        source_dir = 'path_to_lambda_code'  # Replace with your Lambda code directory
+        output_zip = 'lambda_function.zip'
+
+        # Zip the Lambda function code
+        zip_lambda_function(source_dir, output_zip)
+        
+        # Read zip file for updating the Lambda function code
+        with open(output_zip, 'rb') as zip_file:
+            zip_data = zip_file.read()
+        
+        response = lambda_client.update_function_code(
+            FunctionName=function_name,
+            ZipFile=zip_data
+        )
+        print(f"Lambda function '{function_name}' code updated successfully.")
+
+# def subscribe_to_sns(topic_arn, lambda_function_arn, email_address):
+#     """
+#     Subscribes both the Lambda function and email address to the given SNS topic if they are not already subscribed.
+#     Uses retry logic for both Lambda function and email.
+#     """
+#     retries = 0
+
+#     # Retry loop for subscribing both Lambda and Email
+#     while retries < 5:
+#         try:
+#             # Check if Lambda is already subscribed
+#             lambda_subscribed = False
+#             subscriptions = sns_client.list_subscriptions_by_topic(TopicArn=topic_arn)['Subscriptions']
+#             for subscription in subscriptions:
+#                 if subscription['Endpoint'] == lambda_function_arn:
+#                     lambda_subscribed = True
+#                     print(f"Lambda function {lambda_function_arn} is already subscribed.")
+#                     break
+
+#             if not lambda_subscribed:
+#                 # If not subscribed, attempt to subscribe the Lambda function
+#                 sns_client.subscribe(
+#                     TopicArn=topic_arn,
+#                     Protocol='lambda',
+#                     Endpoint=lambda_function_arn
+#                 )
+#                 print(f"Lambda function {lambda_function_arn} successfully subscribed to SNS topic.")
+
+#             # Check if Email is already subscribed
+#             email_subscribed = False
+#             for subscription in subscriptions:
+#                 if subscription['Endpoint'] == email_address:
+#                     email_subscribed = True
+#                     print(f"Email address {email_address} is already subscribed.")
+#                     break
+
+#             if not email_subscribed:
+#                 # If not subscribed, attempt to subscribe the email address
+#                 sns_client.subscribe(
+#                     TopicArn=topic_arn,
+#                     Protocol='email',
+#                     Endpoint=email_address
+#                 )
+#                 print(f"Email address {email_address} successfully subscribed to SNS topic.")
+
+#             # If both subscriptions are successful, break out of the retry loop
+#             break
+
+#         except Exception as e:
+#             retries += 1
+#             print(f"Error subscribing Lambda or Email to SNS topic (Attempt {retries}): {e}")
+#             time.sleep(2)  # Retry after a brief pause
+
+#     if retries == 5:
+#         print("Failed to subscribe Lambda function or Email address after 5 attempts.")
 
 
 # Function to ensure that tables and bucket exist before running the app
 def setup_resources():
+
+    topic_arn = 'arn:aws:sns:us-east-1:123456789012:MaintenanceDueTopic'  # Replace with your SNS topic ARN
+    lambda_function_arn = 'arn:aws:lambda:us-east-1:123456789012:function:VehicleMaintenanceLambda'  # Replace with your Lambda ARN
+    email_address = 'rhegisanjebas71@gmail.com'  # Replace with your email address
+
     with concurrent.futures.ThreadPoolExecutor() as executor:
         futures = []
+        futures.append(executor.submit(check_or_create_lambda_function))
         futures.append(executor.submit(create_tables_if_not_exist))  # Submit the DynamoDB table creation task
         futures.append(executor.submit(ensure_bucket_exists))  # Submit the S3 bucket creation task
-        futures.append(executor.submit(check_or_create_lambda_function))
         futures.append(executor.submit(check_or_create_sns_topic))
-        futures.append(executor.submit(check_or_create_sqs_queue))
+        # futures.append(executor.submit(check_or_create_sqs_queue))
+        # futures.append(executor.submit(subscribe_to_sns, topic_arn, lambda_function_arn, email_address))
         for future in futures:
             future.result()
 
@@ -298,6 +400,28 @@ def generate_presigned_url(bucket_name, object_key, expiration=3600):
         return None
     return response
 
+
+# Send notification to SNS when a vehicle is added or updated
+def send_sns_notification(vehicle_number, maintenance_date):
+    try:
+        message = {
+            "vehicle_number": vehicle_number,
+            "maintenance_date": maintenance_date.isoformat()  # ISO format for date
+        }
+        
+        # SNS Topic ARN (Replace with your actual ARN)
+        topic_arn = 'arn:aws:sns:us-east-1:073995508140:MaintenanceDueTopic'
+        
+        # Send message to SNS
+        response = sns_client.publish(
+            TopicArn=topic_arn,
+            Message=json.dumps(message),
+            Subject="Vehicle Maintenance Notification"
+        )
+        
+        print(f"SNS notification sent for vehicle {vehicle_number}, response: {response}")
+    except Exception as e:
+        print(f"Error sending SNS notification: {e}")
 
 # Signup Route
 @app.route('/signup', methods=['GET', 'POST'])
@@ -450,6 +574,9 @@ def vehicle():
         if bill_image_filename:
             image_url = generate_presigned_url(S3_BUCKET_NAME, bill_image_filename)
 
+        
+        send_sns_notification(vehicle_number, maintenance_date)
+
         flash('Vehicle maintenance details added successfully!', 'success')
         return redirect(url_for('home'))  # Redirect to the home page where the image is displayed
 
@@ -515,6 +642,9 @@ def edit_vehicle(vehicle_number):
             UpdateExpression=update_expression,
             ExpressionAttributeValues=expression_values
         )
+
+        send_sns_notification(vehicle_number, maintenance_date)
+
         flash('Vehicle details updated successfully!', 'success')
 
         return redirect(url_for('home')) 
