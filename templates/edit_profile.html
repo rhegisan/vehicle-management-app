@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <div class="container">
+    <h1>Edit Profile</h1>
+    <form method="POST">
+      <!-- Username (Read-only) -->
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" class="form-control" id="username" name="username" value="{{ username }}" required readonly>
+        <small class="form-text text-muted">Username cannot be changed.</small>
+      </div>
+      
+      <!-- Full Name -->
+      <div class="form-group">
+        <label for="full_name">Full Name</label>
+        <input type="text" class="form-control" id="full_name" name="full_name" value="{{ full_name }}" required>
+      </div>
+      
+      <!-- Email -->
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input type="email" class="form-control" id="email" name="email" value="{{ email }}" required>
+      </div>
+      
+      <!-- Phone Number -->
+      <div class="form-group">
+        <label for="phone_number">Phone Number</label>
+        <input type="text" class="form-control" id="phone_number" name="phone_number" value="{{ phone_number }}" required>
+      </div>
+      
+      <!-- New Password (Optional) -->
+      <div class="form-group">
+        <label for="password">New Password (Leave blank to keep current password)</label>
+        <input type="password" class="form-control" id="password" name="password">
+      </div>
+      
+      <!-- Confirm New Password -->
+      <div class="form-group">
+        <label for="confirm_password">Confirm New Password</label>
+        <input type="password" class="form-control" id="confirm_password" name="confirm_password">
+      </div>
+      
+      <!-- Submit Button -->
+      <button type="submit" class="btn btn-primary mt-3">Update Profile</button>
+    </form>
+  </div>
+{% endblock %}

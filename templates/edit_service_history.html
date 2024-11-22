@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <div class="container">
+    <h1>Edit Service History for Vehicle {{ vehicle_number }}</h1>
+    
+    <form method="POST">
+      <div class="mb-3">
+        <label for="service_date" class="form-label">Service Date</label>
+        <input type="date" class="form-control" id="service_date" name="service_date" value="{{ service.service_date }}" required>
+      </div>
+      <div class="mb-3">
+        <label for="service_description" class="form-label">Service Description</label>
+        <textarea class="form-control" id="service_description" name="service_description" required>{{ service.service_description }}</textarea>
+      </div>
+      <div class="mb-3">
+        <label for="service_cost" class="form-label">Service Cost ($)</label>
+        <input type="number" step="0.01" class="form-control" id="service_cost" name="service_cost" value="{{ service.service_cost }}" required>
+      </div>
+      <button type="submit" class="btn btn-primary">Update Service History</button>
+    </form>
+    
+    <a href="{{ url_for('view_service_history', vehicle_number=vehicle_number) }}" class="btn btn-secondary mt-3">Back to Service History</a>
+  </div>
+{% endblock %}

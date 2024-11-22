@@ -103,4 +103,38 @@ Calendar Integration: Use APIs like Google Calendar API for seamless integration
 
 
 
+1. Vehicle Maintenance Scheduling and Alerts
+Feature: Allow users to set maintenance reminders for their vehicles.
+Enhancement: Users can set a reminder date for their vehicle's maintenance. When the date approaches, send an alert via email/SMS using SNS and Lambda.
+How to Implement:
+Add a "maintenance reminder date" field to the vehicle form.
+Set up Lambda to monitor the maintenance date and trigger a notification to the user (you’ve already integrated SNS).
+2. Vehicle Service History
+Feature: Track and display a vehicle's maintenance history.
+Enhancement: Add a service history section to each vehicle entry where users can log completed maintenance tasks (oil change, tire replacement, etc.). Display a history timeline on the homepage.
+How to Implement:
+Add a new table to store maintenance records for each vehicle (e.g., vehicle_service_history with fields like vehicle_number, service_date, service_description, etc.).
+Add a page where users can view their vehicle’s service history.
+3. User Profile and Settings
+Feature: Allow users to update their profile information.
+Enhancement: Let users update their personal information, including email, phone number, and password. This can be added in the settings section.
+How to Implement:
+Create an "Edit Profile" page where users can modify their information stored in the users table.
+Update the user details in DynamoDB when the changes are submitted.
+4. Admin Panel
+Feature: Create an admin dashboard for vehicle and user management.
+Enhancement: Allow admin users to add, update, and delete vehicles or users. This can be restricted by user roles (Admin, User).
+How to Implement:
+Create a new roles column in the users table to differentiate between admin and regular users.
+Admin users can access a special dashboard to manage vehicles and users.
+5. Search and Filter Vehicle Data
+Feature: Allow users to search and filter vehicles based on attributes like vehicle type, make, or model.
+Enhancement: Provide a search bar and filters on the homepage so users can easily find specific vehicles.
+How to Implement:
+Add a search bar to the homepage and modify the backend to query DynamoDB with the user-provided search parameters.
+Implement filtering options for users to filter vehicles by different attributes (e.g., make, model).
+
+
+
+
 

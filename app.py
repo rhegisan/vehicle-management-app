@@ -11,6 +11,7 @@ from flask import make_response
 import json
 import os
 import zipfile
+from decimal import Decimal
 
 app = Flask(__name__)
 
@@ -50,6 +51,7 @@ class User(UserMixin):
 dynamodb = boto3.resource('dynamodb', region_name='us-east-1')  # Choose your region
 users_table = dynamodb.Table('users')
 vehicles_table = dynamodb.Table('vehicles')
+vehicle_service_history = dynamodb.Table('vehicle_service_history')
 
 # AWS S3 setup
 S3_BUCKET_NAME = 'rhegi'  # Replace with your S3 bucket name
@@ -145,10 +147,34 @@ def create_tables_if_not_exist():
                 }
             ]
         )
+        # Check if 'vehicle_service_history' table exists
+    try:
+        client.describe_table(TableName='vehicle_service_history')
+        print("Table 'vehicle_service_history' already exists.")
+    except client.exceptions.ResourceNotFoundException:
+        print("Table 'vehicle_service_history' does not exist. Creating table...")
+        client.create_table(
+            TableName='vehicle_service_history',
+            KeySchema=[
+                {'AttributeName': 'vehicle_number', 'KeyType': 'HASH'},  # Partition key
+                {'AttributeName': 'service_date', 'KeyType': 'RANGE'}  # Sort key (service_date)
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'vehicle_number', 'AttributeType': 'S'},
+                {'AttributeName': 'service_date', 'AttributeType': 'S'}
+            ],
+            ProvisionedThroughput={
+                'ReadCapacityUnits': 5,
+                'WriteCapacityUnits': 5
+            }
+        )
+        
         client.get_waiter('table_exists').wait(TableName='users')
         print("Table 'users' created successfully.")
         client.get_waiter('table_exists').wait(TableName='vehicles')
         print("Table 'vehicles' created successfully.")
+        client.get_waiter('table_exists').wait(TableName='vehicle_service_history')
+        print("Table 'vehicle_service_history' created successfully.")
 
 # Function to ensure that the S3 bucket exists, and create it if not
 def ensure_bucket_exists():
@@ -263,7 +289,7 @@ def check_or_create_lambda_function():
         print(f"Lambda function '{function_name}' does not exist. Creating it...")
         
         # Path to Lambda code
-        source_dir = '.'  # Replace with your Lambda code directory
+        source_dir = './lambda'  # Replace with your Lambda code directory
         output_zip = 'lambda_function.zip'
 
         # Zip the Lambda function code
@@ -303,7 +329,7 @@ def check_or_create_lambda_function():
         print(f"Updating code for Lambda function '{function_name}'...")
         
         # Path to Lambda code
-        source_dir = '.'  # Replace with your Lambda code directory
+        source_dir = './lambda'  # Replace with your Lambda code directory
         output_zip = 'lambda_function.zip'
 
         # Zip the Lambda function code
@@ -558,6 +584,59 @@ def signup():
     return render_template('signup.html')
 
 
+# Route for editing the profile
+@app.route('/edit_profile', methods=['GET', 'POST'])
+@login_required
+def edit_profile():
+    if request.method == 'POST':
+        full_name = request.form['full_name']
+        email = request.form['email']
+        phone_number = request.form['phone_number']
+        new_password = request.form['password']
+        confirm_password = request.form['confirm_password']
+        
+        # Check if passwords match when a new password is entered
+        if new_password and new_password != confirm_password:
+            flash('Passwords do not match!', 'danger')
+            return redirect(url_for('edit_profile'))
+        
+        # Hash the new password if provided
+        if new_password:
+            hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
+        
+        # Update the user's profile in DynamoDB
+        update_expression = "SET full_name = :full_name, email = :email, phone_number = :phone_number"
+        expression_values = {
+            ':full_name': full_name,
+            ':email': email,
+            ':phone_number': phone_number
+        }
+
+        # If a new password is provided, update it as well
+        if new_password:
+            update_expression += ", password = :password"
+            expression_values[':password'] = boto3.dynamodb.types.Binary(hashed_password)
+
+        # Perform the update in DynamoDB
+        users_table.update_item(
+            Key={'username': current_user.id},
+            UpdateExpression=update_expression,
+            ExpressionAttributeValues=expression_values
+        )
+        
+        flash('Profile updated successfully!', 'success')
+        return redirect(url_for('home'))
+    
+    # Fetch the current user's information from DynamoDB
+    user = users_table.get_item(Key={'username': current_user.id})['Item']
+    
+    # Pass the current values of full_name, email, and phone_number to the template
+    return render_template('edit_profile.html', 
+                           username=user['username'], 
+                           full_name=user['full_name'], 
+                           email=user['email'], 
+                           phone_number=user['phone_number'])
+
 # Login Route
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -594,7 +673,10 @@ def home():
             # Generate the presigned URL for the bill image (if it exists)
             vehicle['image_url'] = generate_presigned_url(S3_BUCKET_NAME, vehicle['bill_image'])
 
-    # Pass the vehicles (with image_url) to the template
+        # Add the link to the service history page for each vehicle
+        vehicle['service_history_url'] = url_for('view_service_history', vehicle_number=vehicle['vehicle_number'])
+
+    # Pass the vehicles (with image_url and service_history_url) to the template
     return render_template('home.html', vehicles=vehicles)
 
 
@@ -769,6 +851,112 @@ def delete_vehicle(vehicle_number):
 
     flash('Vehicle deleted successfully!', 'success')
     return redirect(url_for('home'))
+
+
+@app.route('/add_service_history', methods=['GET', 'POST'])
+@login_required
+def add_service_history():
+    if request.method == 'POST':
+        # Get the form data
+        vehicle_number = request.form['vehicle_number']  # User inputs the vehicle number here
+        service_date = request.form['service_date']
+        service_description = request.form['service_description']
+        service_cost = Decimal(request.form['service_cost'])  # Use Decimal for cost precision
+
+        # Add service history to the vehicle_service_history table
+        vehicle_service_history.put_item(
+            Item={
+                'vehicle_number': vehicle_number,
+                'service_date': service_date,
+                'service_description': service_description,
+                'service_cost': service_cost,  # Store as string or Decimal in DynamoDB
+            }
+        )
+
+        flash('Service history added successfully!', 'success')
+        return redirect(url_for('view_service_history', vehicle_number=vehicle_number))  # Redirect back to the view history page
+    
+    return render_template('add_service_history.html')
+
+
+@app.route('/view_service_history/<vehicle_number>')
+@login_required
+def view_service_history(vehicle_number):
+    # Fetch the service history for the specific vehicle
+    service_response = vehicle_service_history.query(
+        KeyConditionExpression=boto3.dynamodb.conditions.Key('vehicle_number').eq(vehicle_number)
+    )
+
+    service_history = service_response.get('Items', [])
+
+    # Fetch vehicle details (optional, to display vehicle info along with service history)
+    vehicle_response = vehicles_table.get_item(
+        Key={'vehicle_number': vehicle_number, 'username': current_user.id}
+    )
+
+    vehicle = vehicle_response.get('Item', {})
+
+    # Make sure to pass vehicle_number to the template
+    return render_template('view_service_history.html', service_history=service_history, vehicle=vehicle, vehicle_number=vehicle_number)
+
+
+
+@app.route('/edit_service_history/<vehicle_number>/<service_date>', methods=['GET', 'POST'])
+@login_required
+def edit_service_history(vehicle_number, service_date):
+    # Fetch the service history based on vehicle_number and service_date
+    response = vehicle_service_history.get_item(
+        Key={
+            'vehicle_number': vehicle_number,
+            'service_date': service_date
+        }
+    )
+
+    service = response.get('Item')  # Fetch the service item to edit
+
+    if not service:
+        flash('Service history not found!', 'danger')
+        return redirect(url_for('view_service_history', vehicle_number=vehicle_number))
+
+    if request.method == 'POST':
+        # Get the updated form data
+        updated_service_date = request.form['service_date']
+        updated_service_description = request.form['service_description']
+        updated_service_cost = Decimal(request.form['service_cost'])  # Use Decimal for precision
+
+        # Update the service history item in DynamoDB
+        vehicle_service_history.update_item(
+            Key={
+                'vehicle_number': vehicle_number,
+                'service_date': service_date
+            },
+            UpdateExpression="SET service_date = :sd, service_description = :sd_desc, service_cost = :sd_cost",
+            ExpressionAttributeValues={
+                ':sd': updated_service_date,
+                ':sd_desc': updated_service_description,
+                ':sd_cost': updated_service_cost
+            }
+        )
+
+        flash('Service history updated successfully!', 'success')
+        return redirect(url_for('view_service_history', vehicle_number=vehicle_number))
+
+    return render_template('edit_service_history.html', service=service, vehicle_number=vehicle_number)
+
+
+@app.route('/delete_service_history/<vehicle_number>/<service_date>', methods=['POST'])
+@login_required
+def delete_service_history(vehicle_number, service_date):
+    # Delete the service history item from DynamoDB
+    vehicle_service_history.delete_item(
+        Key={
+            'vehicle_number': vehicle_number,
+            'service_date': service_date
+        }
+    )
+
+    flash('Service history deleted successfully!', 'success')
+    return redirect(url_for('view_service_history', vehicle_number=vehicle_number))
 
 
 
