@@ -106,7 +106,8 @@ def create_tables_if_not_exist():
             ],
             AttributeDefinitions=[
                 {'AttributeName': 'vehicle_number', 'AttributeType': 'S'},
-                {'AttributeName': 'username', 'AttributeType': 'S'}
+                {'AttributeName': 'username', 'AttributeType': 'S'},
+                {'AttributeName': 'maintenance_date', 'AttributeType': 'S'},
             ],
             ProvisionedThroughput={
                 'ReadCapacityUnits': 5,
@@ -114,12 +115,28 @@ def create_tables_if_not_exist():
             },
             GlobalSecondaryIndexes=[
                 {
-                    'IndexName': 'username-index',  # GSI name
+                    'IndexName': 'username-index',  # GSI name for querying by username
                     'KeySchema': [
                         {'AttributeName': 'username', 'KeyType': 'HASH'}  # GSI partition key
                     ],
                     'Projection': {
                         'ProjectionType': 'ALL'  # Include all attributes in the GSI projection
+                    },
+                    'ProvisionedThroughput': {
+                        'ReadCapacityUnits': 5,
+                        'WriteCapacityUnits': 5
+                    }
+                },
+                {
+                    'IndexName': 'MaintenanceDateIndex',
+                    'KeySchema': [
+                        {
+                            'AttributeName': 'maintenance_date',
+                            'KeyType': 'HASH'  # Make maintenance_date the partition key for the GSI
+                        },
+                    ],
+                    'Projection': {
+                        'ProjectionType': 'ALL'  # Include all attributes in the projection
                     },
                     'ProvisionedThroughput': {
                         'ReadCapacityUnits': 5,
@@ -150,9 +167,7 @@ def ensure_bucket_exists():
         else:
             try:
                 s3_client.create_bucket(
-                    Bucket=S3_BUCKET_NAME,
-                    CreateBucketConfiguration={'LocationConstraint': S3_REGION}
-                )
+                    Bucket=S3_BUCKET_NAME)
                 print(f"Bucket {S3_BUCKET_NAME} created successfully in {S3_REGION} region.")
             except ClientError as e:
                 print(f"Error creating bucket: {e}")
@@ -288,7 +303,7 @@ def check_or_create_lambda_function():
         print(f"Updating code for Lambda function '{function_name}'...")
         
         # Path to Lambda code
-        source_dir = 'path_to_lambda_code'  # Replace with your Lambda code directory
+        source_dir = '.'  # Replace with your Lambda code directory
         output_zip = 'lambda_function.zip'
 
         # Zip the Lambda function code
@@ -360,13 +375,58 @@ def check_or_create_lambda_function():
 #     if retries == 5:
 #         print("Failed to subscribe Lambda function or Email address after 5 attempts.")
 
+def create_cloudwatch_rule():
+    event_client = boto3.client('events')
+    rule_name = 'DailyMaintenanceCheck'  # You can keep the same name or change as needed
+
+    # Check if the rule already exists
+    try:
+        response = event_client.describe_rule(Name=rule_name)
+        print(f"CloudWatch rule '{rule_name}' already exists.")
+        rule_arn = response['Arn']
+        print(f"Rule ARN: {rule_arn}")
+    except event_client.exceptions.ResourceNotFoundException:
+        # Rule doesn't exist, so we need to create it
+        print(f"CloudWatch rule '{rule_name}' does not exist. Creating it now.")
+        
+        # Create a CloudWatch Rule that triggers every 3 minutes
+        rule_response = event_client.put_rule(
+            Name=rule_name,
+            ScheduleExpression='rate(3 minutes)',  # Trigger every 3 minutes
+            State='ENABLED',
+        )
+        
+        rule_arn = rule_response['RuleArn']
+        print(f"CloudWatch rule created with ARN: {rule_arn}")
+
+        # Add permission for CloudWatch to invoke your Lambda
+        lambda_client = boto3.client('lambda')
+        
+        lambda_client.add_permission(
+            FunctionName='VehicleMaintenanceLambda',  # Replace with your Lambda function name
+            StatementId='CloudWatchInvokePermission',
+            Action='lambda:InvokeFunction',
+            Principal='events.amazonaws.com',
+        )
+        
+        # Attach Lambda function as target for CloudWatch rule
+        event_client.put_targets(
+            Rule=rule_name,
+            Targets=[
+                {
+                    'Id': '1',
+                    'Arn': 'arn:aws:lambda:us-east-1:073995508140:function:VehicleMaintenanceLambda',  # Your Lambda ARN
+                },
+            ]
+        )
+
 
 # Function to ensure that tables and bucket exist before running the app
 def setup_resources():
 
-    topic_arn = 'arn:aws:sns:us-east-1:123456789012:MaintenanceDueTopic'  # Replace with your SNS topic ARN
-    lambda_function_arn = 'arn:aws:lambda:us-east-1:123456789012:function:VehicleMaintenanceLambda'  # Replace with your Lambda ARN
-    email_address = 'rhegisanjebas71@gmail.com'  # Replace with your email address
+    # topic_arn = 'arn:aws:sns:us-east-1:123456789012:MaintenanceDueTopic'  # Replace with your SNS topic ARN
+    # lambda_function_arn = 'arn:aws:lambda:us-east-1:123456789012:function:VehicleMaintenanceLambda'  # Replace with your Lambda ARN
+    # email_address = 'rhegisanjebas71@gmail.com'  # Replace with your email address
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
         futures = []
@@ -374,6 +434,7 @@ def setup_resources():
         futures.append(executor.submit(create_tables_if_not_exist))  # Submit the DynamoDB table creation task
         futures.append(executor.submit(ensure_bucket_exists))  # Submit the S3 bucket creation task
         futures.append(executor.submit(check_or_create_sns_topic))
+        futures.append(executor.submit(create_cloudwatch_rule))
         # futures.append(executor.submit(check_or_create_sqs_queue))
         # futures.append(executor.submit(subscribe_to_sns, topic_arn, lambda_function_arn, email_address))
         for future in futures:
@@ -401,27 +462,58 @@ def generate_presigned_url(bucket_name, object_key, expiration=3600):
     return response
 
 
-# Send notification to SNS when a vehicle is added or updated
-def send_sns_notification(vehicle_number, maintenance_date):
+
+def invoke_lambda_function(vehicle_number, maintenance_date):
+    # Prepare the payload for the Lambda function
+    payload = {
+        "vehicle_number": vehicle_number,
+        "maintenance_date": maintenance_date,
+    }
+
+    # Replace with your Lambda ARN
+    lambda_arn = "arn:aws:lambda:us-east-1:073995508140:function:VehicleMaintenanceLambda"
+
+    # Invoke the Lambda function
     try:
-        message = {
-            "vehicle_number": vehicle_number,
-            "maintenance_date": maintenance_date.isoformat()  # ISO format for date
-        }
-        
-        # SNS Topic ARN (Replace with your actual ARN)
-        topic_arn = 'arn:aws:sns:us-east-1:073995508140:MaintenanceDueTopic'
-        
-        # Send message to SNS
-        response = sns_client.publish(
-            TopicArn=topic_arn,
-            Message=json.dumps(message),
-            Subject="Vehicle Maintenance Notification"
+        response = lambda_client.invoke(
+            FunctionName=lambda_arn,
+            InvocationType='Event',  # 'Event' means asynchronous invocation
+            Payload=json.dumps(payload)
         )
-        
-        print(f"SNS notification sent for vehicle {vehicle_number}, response: {response}")
+        print(f"Lambda invoked successfully for vehicle {vehicle_number}")
+        print(response)
     except Exception as e:
-        print(f"Error sending SNS notification: {e}")
+        print(f"Error invoking Lambda: {e}")
+
+# # Send notification to SNS when a vehicle is added or updated
+# def send_sns_notification(vehicle_number, maintenance_date):
+#     try:
+#         message = {
+#             "vehicle_number": vehicle_number,
+#             "maintenance_date": maintenance_date.isoformat()  # ISO format for date
+#         }
+        
+#         # SNS Topic ARN (Replace with your actual ARN)
+#         topic_arn = 'arn:aws:sns:us-east-1:073995508140:MaintenanceDueTopic'
+        
+#         # Send message to SNS
+#         response = sns_client.publish(
+#             TopicArn=topic_arn,
+#             Message=json.dumps(message),
+#             Subject="Vehicle Maintenance Notification"
+#         )
+        
+#         print(f"SNS notification sent for vehicle {vehicle_number}, response: {response}")
+#     except Exception as e:
+#         print(f"Error sending SNS notification: {e}")
+
+def delete_file_from_s3(filename):
+    s3_client = boto3.client('s3')
+    try:
+        s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=filename)
+        print(f"Deleted {filename} from S3.")
+    except Exception as e:
+        print(f"Error deleting file {filename} from S3: {e}")
 
 # Signup Route
 @app.route('/signup', methods=['GET', 'POST'])
@@ -506,7 +598,6 @@ def home():
     return render_template('home.html', vehicles=vehicles)
 
 
-
 # Logout Route
 @app.route('/logout')
 def logout():
@@ -575,12 +666,15 @@ def vehicle():
             image_url = generate_presigned_url(S3_BUCKET_NAME, bill_image_filename)
 
         
-        send_sns_notification(vehicle_number, maintenance_date)
+        # send_sns_notification(vehicle_number, maintenance_date)
+        # invoke_lambda_function(vehicle_number, maintenance_date.isoformat)
+
 
         flash('Vehicle maintenance details added successfully!', 'success')
         return redirect(url_for('home'))  # Redirect to the home page where the image is displayed
 
     return render_template('vehicle.html')
+
 
 
 @app.route('/edit_vehicle/<vehicle_number>', methods=['GET', 'POST'])
@@ -643,7 +737,8 @@ def edit_vehicle(vehicle_number):
             ExpressionAttributeValues=expression_values
         )
 
-        send_sns_notification(vehicle_number, maintenance_date)
+        # send_sns_notification(vehicle_number, maintenance_date)
+        # invoke_lambda_function(vehicle_number, maintenance_date.isoformat())
 
         flash('Vehicle details updated successfully!', 'success')
 
@@ -652,6 +747,28 @@ def edit_vehicle(vehicle_number):
     # Return the edit vehicle page with the existing vehicle data
     return render_template('edit_vehicle.html', vehicle=vehicle)
 
+
+@app.route('/delete_vehicle/<vehicle_number>', methods=['POST'])
+@login_required
+def delete_vehicle(vehicle_number):
+    # Delete the vehicle from DynamoDB
+    response = vehicles_table.get_item(Key={'vehicle_number': vehicle_number, 'username': current_user.id})
+    vehicle = response.get('Item')
+
+    if not vehicle:
+        flash('Vehicle not found!', 'danger')
+        return redirect(url_for('home'))  # Redirect to home if vehicle is not found
+
+    # Delete the vehicle from the table
+    vehicles_table.delete_item(Key={'vehicle_number': vehicle_number, 'username': current_user.id})
+
+    # Optionally, delete the associated bill image from S3 (if required)
+    bill_image_filename = vehicle.get('bill_image')
+    if bill_image_filename:
+        delete_file_from_s3(bill_image_filename)
+
+    flash('Vehicle deleted successfully!', 'success')
+    return redirect(url_for('home'))
 
 
 
