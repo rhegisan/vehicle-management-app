@@ -958,6 +958,63 @@ def delete_service_history(vehicle_number, service_date):
     flash('Service history deleted successfully!', 'success')
     return redirect(url_for('view_service_history', vehicle_number=vehicle_number))
 
+@app.route('/filter_vehicles', methods=['GET'])
+@login_required
+def filter_vehicles():
+    # Get filter parameters from the request
+    vehicle_type = request.args.get('vehicle_type', '')
+    vehicle_make = request.args.get('vehicle_make', '')
+    license_plate_number = request.args.get('license_plate_number', '')
+    maintenance_date = request.args.get('maintenance_date', '')
+
+    # Initialize the filter expression list and expression values
+    filter_expression = []
+    expression_values = {}
+
+    # Add filters for vehicle type, make, license plate number, and maintenance date
+    if vehicle_type:
+        filter_expression.append("vehicle_type = :vehicle_type")
+        expression_values[':vehicle_type'] = vehicle_type
+
+    if vehicle_make:
+        filter_expression.append("vehicle_make = :vehicle_make")
+        expression_values[':vehicle_make'] = vehicle_make
+
+    if license_plate_number:
+        filter_expression.append("license_plate_number = :license_plate_number")
+        expression_values[':license_plate_number'] = license_plate_number
+
+    if maintenance_date:
+        # Ensure the maintenance_date format is YYYY-MM-DDT00:00:00 for the comparison
+        formatted_date = f"{maintenance_date}T00:00:00"
+        filter_expression.append("maintenance_date = :maintenance_date")
+        expression_values[':maintenance_date'] = formatted_date
+
+    # Combine the filter expressions using "AND"
+    if filter_expression:
+        filter_expression = " AND ".join(filter_expression)
+    else:
+        filter_expression = None
+
+    # Perform the scan query based on the filters
+    if filter_expression:
+        response = vehicles_table.scan(
+            FilterExpression=filter_expression,
+            ExpressionAttributeValues=expression_values
+        )
+    else:
+        response = vehicles_table.scan()  # If no filters, return all vehicles
+
+    # Fetch the results, including the 'bill_image'
+    vehicles = response.get('Items', [])
+
+    # Generate the presigned URL for the bill images if they exist
+    for vehicle in vehicles:
+        if vehicle.get('bill_image'):
+            vehicle['image_url'] = generate_presigned_url(S3_BUCKET_NAME, vehicle['bill_image'])
+
+    # Render the page with the filtered vehicles
+    return render_template('home.html', vehicles=vehicles)
 
 
 if __name__ == '__main__':

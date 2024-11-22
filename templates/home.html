@@ -3,6 +3,49 @@
 {% block content %}
   <div class="container">
     <h1>My Vehicles</h1>
+
+    <!-- Filter Section -->
+    <form method="GET" action="{{ url_for('filter_vehicles') }}" class="mb-3">
+      <div class="row g-1">
+        <!-- Vehicle Type Filter -->
+        <div class="col-md-3">
+          <label for="vehicle_type" class="form-label">Type</label>
+          <input type="text" id="vehicle_type" name="vehicle_type" class="form-control form-control-sm" value="{{ request.args.get('vehicle_type', '') }}">
+        </div>
+
+        <!-- Vehicle Make Filter -->
+        <div class="col-md-3">
+          <label for="vehicle_make" class="form-label">Make</label>
+          <input type="text" id="vehicle_make" name="vehicle_make" class="form-control form-control-sm" value="{{ request.args.get('vehicle_make', '') }}">
+        </div>
+
+        <!-- License Plate Number Filter -->
+        <div class="col-md-3">
+          <label for="license_plate_number" class="form-label">Plate No.</label>
+          <input type="text" id="license_plate_number" name="license_plate_number" class="form-control form-control-sm" value="{{ request.args.get('license_plate_number', '') }}">
+        </div>
+
+        <!-- Maintenance Date Filter -->
+        <div class="col-md-3">
+          <label for="maintenance_date" class="form-label">Maintenance Date</label>
+          <input type="date" id="maintenance_date" name="maintenance_date" class="form-control form-control-sm" value="{{ request.args.get('maintenance_date', '') }}">
+        </div>
+      </div>
+
+      <div class="row mt-2">
+        <!-- Filter Button -->
+        <div class="col-auto">
+          <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+        </div>
+        
+        <!-- Reset Filters Button -->
+        <div class="col-auto">
+          <a href="{{ url_for('home') }}" class="btn btn-secondary btn-sm">Reset Filters</a>
+        </div>
+      </div>
+    </form>
+
+    <!-- Vehicles Table -->
     <table class="table table-striped">
       <thead>
         <tr>
@@ -25,21 +68,21 @@
             <td>{{ vehicle.maintenance_date[:10] }}</td>  <!-- Display only date portion -->
             <td>
               {% if vehicle.image_url %}
-                <a href="{{ vehicle.image_url }}" class="btn btn-info" target="_blank">Download</a>
+                <a href="{{ vehicle.image_url }}" class="btn btn-info btn-sm" target="_blank">Download</a>
               {% else %}
                 No bill image uploaded.
               {% endif %}
             </td>
             <td class="text-right">  <!-- Align the actions to the right -->
-              <a href="{{ url_for('edit_vehicle', vehicle_number=vehicle.vehicle_number) }}" class="btn btn-warning">Edit</a>
+              <a href="{{ url_for('edit_vehicle', vehicle_number=vehicle.vehicle_number) }}" class="btn btn-warning btn-sm">Edit</a>
 
               <!-- Delete Button -->
               <form action="{{ url_for('delete_vehicle', vehicle_number=vehicle.vehicle_number) }}" method="POST" style="display:inline;">
-                <button type="submit" class="btn btn-danger" onclick="return confirm('Are you sure you want to delete this vehicle?')">Delete</button>
+                <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure you want to delete this vehicle?')">Delete</button>
               </form>
 
               <!-- Service History Button aligned to the right -->
-              <a href="{{ url_for('view_service_history', vehicle_number=vehicle.vehicle_number) }}" class="btn btn-primary ml-2">Service History</a> <!-- Added margin-left for spacing -->
+              <a href="{{ url_for('view_service_history', vehicle_number=vehicle.vehicle_number) }}" class="btn btn-primary btn-sm ml-2">Service History</a> <!-- Added margin-left for spacing -->
             </td>
           </tr>
         {% else %}
