@@ -14,19 +14,22 @@
       <!-- Full Name -->
       <div class="form-group">
         <label for="full_name">Full Name</label>
-        <input type="text" class="form-control" id="full_name" name="full_name" value="{{ full_name }}" required>
+        <input type="text" class="form-control" id="full_name" name="full_name" value="{{ full_name }}" required placeholder="Enter your full name">
+        <small class="form-text text-danger">{{ error_messages.get('full_name', '') }}</small>
       </div>
       
       <!-- Email -->
       <div class="form-group">
         <label for="email">Email</label>
-        <input type="email" class="form-control" id="email" name="email" value="{{ email }}" required>
+        <input type="email" class="form-control" id="email" name="email" value="{{ email }}" required placeholder="Enter your email address">
+        <small class="form-text text-danger">{{ error_messages.get('email', '') }}</small>
       </div>
       
       <!-- Phone Number -->
       <div class="form-group">
         <label for="phone_number">Phone Number</label>
-        <input type="text" class="form-control" id="phone_number" name="phone_number" value="{{ phone_number }}" required>
+        <input type="text" class="form-control" id="phone_number" name="phone_number" value="{{ phone_number }}" required placeholder="Enter your phone number">
+        <small class="form-text text-danger">{{ error_messages.get('phone_number', '') }}</small>
       </div>
       
       <!-- Role -->
@@ -41,13 +44,14 @@
       <!-- New Password (Optional) -->
       <div class="form-group">
         <label for="password">New Password (Leave blank to keep current password)</label>
-        <input type="password" class="form-control" id="password" name="password">
+        <input type="password" class="form-control" id="password" name="password" placeholder="Enter a new password (min. 8 characters)">
+        <small class="form-text text-danger">{{ error_messages.get('password', '') }}</small>
       </div>
       
       <!-- Confirm New Password -->
       <div class="form-group">
         <label for="confirm_password">Confirm New Password</label>
-        <input type="password" class="form-control" id="confirm_password" name="confirm_password">
+        <input type="password" class="form-control" id="confirm_password" name="confirm_password" placeholder="Confirm your new password">
       </div>
       
       <!-- Submit Button -->

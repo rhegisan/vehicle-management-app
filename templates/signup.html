@@ -10,7 +10,7 @@
     <div class="container mt-5">
         <h2 class="text-center">Sign Up</h2>
 
-        <!-- Flash messages -->
+        <!-- Flash messages
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 <div class="alert alert-dismissible fade show mt-3">
@@ -19,50 +19,67 @@
                     {% endfor %}
                 </div>
             {% endif %}
-        {% endwith %}
+        {% endwith %} -->
 
         <!-- Sign Up Form -->
         <form action="{{ url_for('signup') }}" method="POST" class="mt-3">
             <!-- Username -->
             <div class="form-group">
                 <label for="username">Username</label>
-                <input type="text" class="form-control" id="username" name="username" required placeholder="Enter username">
+                <input type="text" class="form-control" id="username" name="username" value="{{ request.form['username'] if request.form.get('username') else '' }}" required placeholder="Enter username">
+                <small class="form-text text-danger">{{ error_messages.get('username', '') }}</small>
             </div>
 
             <!-- Full Name -->
             <div class="form-group">
                 <label for="full_name">Full Name</label>
-                <input type="text" class="form-control" id="full_name" name="full_name" required placeholder="Enter your full name">
+                <input type="text" class="form-control" id="full_name" name="full_name" 
+                    value="{{ request.form['full_name'] if request.form.get('full_name') else '' }}" 
+                    required placeholder="(e.g., Cristiano Ronaldo)">
+                <small class="form-text text-danger">{{ error_messages.get('full_name', '') }}</small>
             </div>
 
             <!-- Email Address -->
             <div class="form-group">
                 <label for="email">Email Address</label>
-                <input type="email" class="form-control" id="email" name="email" required placeholder="Enter email address">
+                <input type="email" class="form-control" id="email" name="email" 
+                    value="{{ request.form['email'] if request.form.get('email') else '' }}" 
+                    required placeholder="(e.g., example@mail.com)">
+                <small class="form-text text-danger">{{ error_messages.get('email', '') }}</small>
             </div>
 
             <!-- Phone Number -->
             <div class="form-group">
                 <label for="phone_number">Phone Number</label>
-                <input type="text" class="form-control" id="phone_number" name="phone_number" required placeholder="Enter phone number">
+                <input type="text" class="form-control" id="phone_number" name="phone_number" 
+                    value="{{ request.form['phone_number'] if request.form.get('phone_number') else '' }}" 
+                    required placeholder="(e.g., +35312345678 or 0123456789)">
+                <small class="form-text text-danger">{{ error_messages.get('phone_number', '') }}</small>
             </div>
+
 
             <!-- Password -->
             <div class="form-group">
                 <label for="password">Password</label>
-                <input type="password" class="form-control" id="password" name="password" required placeholder="Enter password">
+                <input type="password" class="form-control" id="password" name="password" required placeholder="Password (min 8 characters, 1 uppercase, 1 number, 1 special character)">
+                <small class="form-text text-danger">{{ error_messages.get('password', '') }}</small>
+                <small class="form-text text-muted">
+                    Password must be at least 8 characters long, include at least one uppercase letter, one digit, and one special character.
+                </small>
             </div>
 
             <!-- Confirm Password -->
             <div class="form-group">
                 <label for="confirm_password">Confirm Password</label>
                 <input type="password" class="form-control" id="confirm_password" name="confirm_password" required placeholder="Confirm your password">
+                <small class="form-text text-danger">{{ error_messages.get('confirm_password', '') }}</small>
             </div>
 
             <!-- Role -->
             <div class="form-group">
                 <label for="role">Role</label>
-                <input type="text" class="form-control" id="role" name="role" required placeholder="Enter your role">
+                <input type="text" class="form-control" id="role" name="role" value="{{ request.form['role'] if request.form.get('role') else '' }}" required placeholder="Enter your role">
+                <small class="form-text text-danger">{{ error_messages.get('role', '') }}</small>
             </div>
 
             <button type="submit" class="btn btn-primary btn-block">Sign Up</button>

@@ -7,13 +7,25 @@ import time
 from botocore.exceptions import ClientError, EndpointConnectionError
 import concurrent.futures
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
-from flask import make_response
 import json
 import os
 import zipfile
 from decimal import Decimal
+from vehicle_form_validator import FieldValidator
+import logging
+import watchtower
 
 app = Flask(__name__)
+
+# Configure logging to send logs to CloudWatch
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Create a CloudWatch log handler
+log_handler = watchtower.CloudWatchLogHandler(log_group='vehicles', stream_name='vehicles')
+
+# Add the handler to the logger
+logger.addHandler(log_handler)
 
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'  # Redirects to the login page for unauthorized users
@@ -568,6 +580,8 @@ def delete_file_from_s3(filename):
 
 @app.route('/')
 def landing_page():
+    app.logger.info('This is an info log')
+    app.logger.warning('This is a warning log')
     return render_template('landing.html')
     
 # Route to submit an appointment
@@ -670,12 +684,15 @@ def download_appointments_txt():
         print(f"Error downloading appointments: {e}")
         return "Failed to download appointments data."
 
-# Signup Route
+
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
+    error_messages = {}
+
     if not current_user.is_authenticated or current_user.role != 'admin':
         flash('You do not have permission to access this page.', 'danger')
         return redirect(url_for('landing_page'))
+    
     if request.method == 'POST':
         username = request.form['username']
         full_name = request.form['full_name']
@@ -685,21 +702,33 @@ def signup():
         confirm_password = request.form['confirm_password']
         role = request.form['role']
 
-        # Check if passwords match
+        # Validate Full Name
+        if not FieldValidator.validate_full_name(full_name):
+            error_messages['full_name'] = 'Invalid full name. Name should be alphabetic and properly formatted. John Doe'
+
+        # Validate Email
+        if not FieldValidator.validate_email(email):
+            error_messages['email'] = 'Invalid email address.'
+
+        # Validate Phone Number
+        if not FieldValidator.validate_phone_number(phone_number, country_code='IE'):
+            error_messages['phone_number'] = 'Invalid phone number format. +353 or 0 followed by 9 digits'
+
+        # Validate Password
         if password != confirm_password:
-            flash('Passwords do not match!', 'danger')
-            return redirect(url_for('signup'))
+            error_messages['confirm_password'] = 'Passwords do not match!'
+        
+        is_valid, message = FieldValidator.validate_password(password, confirm_password)
+        if not is_valid:
+            error_messages['password'] = message
 
-        # Check if the username already exists in DynamoDB
-        response = users_table.get_item(Key={'username': username})
-        if 'Item' in response:
-            flash('Username already exists!', 'danger')
-            return redirect(url_for('signup'))
+        # If there are errors, render the form again
+        if error_messages:
+            return render_template('signup.html', error_messages=error_messages)
 
-        # Hash the password
+        # Proceed with the rest of the logic (e.g., creating user, saving to DB, etc.)
         hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-
-        # Create the new user item with basic personal info (no vehicle data here)
+        
         user_item = {
             'username': username,
             'password': boto3.dynamodb.types.Binary(hashed_password),
@@ -715,16 +744,19 @@ def signup():
         flash('Account created successfully! Please log in.', 'success')
         return redirect(url_for('login'))
 
-    return render_template('signup.html')
+    return render_template('signup.html', error_messages=error_messages)
 
 
-# Route for editing the profile
+# Route for editing the profile #custom library used here
 @app.route('/edit_profile', methods=['GET', 'POST'])
 @login_required
 def edit_profile():
     if not current_user.is_authenticated or current_user.role != 'admin':
         flash('You do not have permission to access this page.', 'danger')
         return redirect(url_for('landing_page'))
+    
+    error_messages = {}  # Dictionary to hold error messages
+    
     if request.method == 'POST':
         full_name = request.form['full_name']
         email = request.form['email']
@@ -733,10 +765,32 @@ def edit_profile():
         confirm_password = request.form['confirm_password']
         role = request.form['role']
         
-        # Check if passwords match when a new password is entered
+        # Validate full name
+        if not FieldValidator.validate_full_name(full_name):
+            error_messages['full_name'] = 'Invalid full name. Name should only contain alphabets and spaces, e.g., John Doe.'
+        
+        # Validate email
+        if not FieldValidator.validate_email(email):
+            error_messages['email'] = 'Invalid email address.'
+
+        # Validate phone number
+        if not FieldValidator.validate_phone_number(phone_number, country_code='IE'):
+            error_messages['phone_number'] = 'Invalid phone number format. Example: +353123456789 or 0123456789.'
+
+        # Check if passwords match
         if new_password and new_password != confirm_password:
-            flash('Passwords do not match!', 'danger')
-            return redirect(url_for('edit_profile'))
+            error_messages['password'] = 'Passwords do not match!'
+
+        # Check password strength if a new password is provided
+        if new_password:
+            is_valid, message = FieldValidator.validate_password(new_password, confirm_password)
+            if not is_valid:
+                error_messages['password'] = message
+
+        if error_messages:
+            return render_template('edit_profile.html', 
+                                   full_name=full_name, email=email, phone_number=phone_number, 
+                                   role=role, error_messages=error_messages)
         
         # Hash the new password if provided
         if new_password:
@@ -763,48 +817,21 @@ def edit_profile():
             ExpressionAttributeValues=expression_values
         )
 
-        # Construct the message for SNS notification
-        message = {
-            "user_id": current_user.id,
-            "full_name": full_name,
-            "email": email,
-            "phone_number": phone_number,
-            "updated_fields": []
-        }
-
-        # Check which fields were updated and add them to the message
-        if new_password:
-            message["updated_fields"].append("password")
-        
-        if full_name != current_user.full_name:
-            message["updated_fields"].append("full_name")
-        
-        if email != current_user.email:
-            message["updated_fields"].append("email")
-        
-        if phone_number != current_user.phone_number:
-            message["updated_fields"].append("phone_number")
-        
-        # Send SNS notification about the profile update
-        send_sns_notification(
-            topic_arn="arn:aws:sns:us-east-1:073995508140:ProfileUpdateTopic",
-            message=message,
-            subject="User Profile Updated"
-        )
-        
         flash('Profile updated successfully!', 'success')
         return redirect(url_for('home'))
     
     # Fetch the current user's information from DynamoDB
     user = users_table.get_item(Key={'username': current_user.id})['Item']
     
-    # Pass the current values of full_name, email, and phone_number to the template
+    # Pass the current values of full_name, email, phone_number to the template
     return render_template('edit_profile.html', 
                            username=user['username'], 
                            full_name=user['full_name'], 
                            email=user['email'], 
                            phone_number=user['phone_number'],
-                           role=user['role'])
+                           role=user['role'],
+                           error_messages={})
+
 
 # Login Route
 @app.route('/login', methods=['GET', 'POST'])
@@ -828,6 +855,7 @@ def login():
 @app.route('/home', methods=['GET', 'POST'])
 @login_required
 def home():
+    app.logger.info("Home page accessed.")
     # Fetch vehicles linked to the current user
     response = vehicles_table.query(
         IndexName='username-index',  # Using the GSI on 'username'
@@ -877,6 +905,7 @@ def upload_file_to_s3(file):
 @app.route('/vehicle', methods=['GET', 'POST'])
 @login_required
 def vehicle():
+    error_messages = {}
     if request.method == 'POST':
         vehicle_number = request.form['vehicle_number']
         vehicle_type = request.form['vehicle_type']
@@ -885,6 +914,23 @@ def vehicle():
         license_plate_number = request.form['license_plate_number']
         maintenance_date = datetime.strptime(request.form['maintenance_date'], '%Y-%m-%d')
 
+        # Validate fields using your custom validator (skip validation for maintenance_date and bill_image)
+        if not FieldValidator.validate_vehicle_type(vehicle_type):
+            error_messages['vehicle_type'] = "Invalid vehicle type. Please choose a valid type. 'car', 'truck', 'motorcycle', 'bus', 'van', 'bike', 'cycle', 'train']"
+        
+        if not FieldValidator.validate_vehicle_make(vehicle_make):
+            error_messages['vehicle_make'] = "Vehicle make must contain only alphabetic characters."
+        
+        if not FieldValidator.validate_vehicle_model(vehicle_model):
+            error_messages['vehicle_model'] = "Vehicle model must be between 1 and 20 characters."
+        
+        if not FieldValidator.validate_license_plate(license_plate_number):
+            error_messages['license_plate_number'] = "Invalid license plate number."
+
+        if error_messages:
+            # If there are validation errors, render the form again with error messages
+            return render_template('vehicle.html', error_messages=error_messages)
+        
         # Handle the bill image upload
         bill_image_filename = None
         if 'bill_image' in request.files:
@@ -937,13 +983,14 @@ def vehicle():
         flash('Vehicle maintenance details added successfully!', 'success')
         return redirect(url_for('home'))  # Redirect to the home page where the image is displayed
 
-    return render_template('vehicle.html')
+    return render_template('vehicle.html', error_messages=error_messages)
 
 
 
 @app.route('/edit_vehicle/<vehicle_number>', methods=['GET', 'POST'])
 @login_required
 def edit_vehicle(vehicle_number):
+    error_messages = {}
     # Fetch the vehicle details from DynamoDB using the vehicle_number and username (current_user.id)
     response = vehicles_table.get_item(Key={'vehicle_number': vehicle_number, 'username': current_user.id})
     vehicle = response.get('Item')
@@ -951,6 +998,8 @@ def edit_vehicle(vehicle_number):
     if not vehicle:
         flash('Vehicle not found!', 'danger')
         return redirect(url_for('home'))  # Redirect to home if vehicle is not found
+
+    error_messages = {}
 
     if request.method == 'POST':
         # Get the updated details from the form
@@ -960,6 +1009,23 @@ def edit_vehicle(vehicle_number):
         license_plate_number = request.form['license_plate_number']
         maintenance_date_str = request.form['maintenance_date']
         maintenance_date = datetime.strptime(maintenance_date_str, '%Y-%m-%d') if maintenance_date_str else None
+
+# Validate fields using your custom validator (skip validation for maintenance_date and bill_image)
+        if not FieldValidator.validate_vehicle_type(vehicle_type):
+            error_messages['vehicle_type'] = "Invalid vehicle type. Please choose a valid type. 'car', 'truck', 'motorcycle', 'bus', 'van', 'bike', 'cycle', 'train']"
+        
+        if not FieldValidator.validate_vehicle_make(vehicle_make):
+            error_messages['vehicle_make'] = "Vehicle make must contain only alphabetic characters."
+        
+        if not FieldValidator.validate_vehicle_model(vehicle_model):
+            error_messages['vehicle_model'] = "Vehicle model must be between 1 and 20 characters."
+        
+        if not FieldValidator.validate_license_plate(license_plate_number):
+            error_messages['license_plate_number'] = "Invalid license plate number."
+
+        if error_messages:
+            # If there are validation errors, render the form again with error messages
+            return render_template('vehicle.html', error_messages=error_messages)
 
         # Handle bill image upload (optional)
         bill_image_filename = vehicle.get('bill_image')  # Keep the existing image if not uploading a new one
@@ -1009,7 +1075,7 @@ def edit_vehicle(vehicle_number):
         return redirect(url_for('home')) 
 
     # Return the edit vehicle page with the existing vehicle data
-    return render_template('edit_vehicle.html', vehicle=vehicle)
+    return render_template('edit_vehicle.html', vehicle=vehicle, error_messages=error_messages)
 
 
 @app.route('/delete_vehicle/<vehicle_number>', methods=['POST'])
@@ -1148,12 +1214,13 @@ def filter_vehicles():
     vehicle_make = request.args.get('vehicle_make', '')
     license_plate_number = request.args.get('license_plate_number', '')
     maintenance_date = request.args.get('maintenance_date', '')
+    vehicle_number = request.args.get('vehicle_number', '')  # Add vehicle_number filter
 
     # Initialize the filter expression list and expression values
     filter_expression = []
     expression_values = {}
 
-    # Add filters for vehicle type, make, license plate number, and maintenance date
+    # Add filters for vehicle type, make, license plate number, maintenance date, and vehicle number
     if vehicle_type:
         filter_expression.append("vehicle_type = :vehicle_type")
         expression_values[':vehicle_type'] = vehicle_type
@@ -1171,6 +1238,10 @@ def filter_vehicles():
         formatted_date = f"{maintenance_date}T00:00:00"
         filter_expression.append("maintenance_date = :maintenance_date")
         expression_values[':maintenance_date'] = formatted_date
+
+    if vehicle_number:
+        filter_expression.append("vehicle_number = :vehicle_number")
+        expression_values[':vehicle_number'] = vehicle_number
 
     # Combine the filter expressions using "AND"
     if filter_expression:

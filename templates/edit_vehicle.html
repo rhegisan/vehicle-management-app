@@ -1,33 +1,69 @@
 {% extends 'base.html' %}
 
+{% block title %}Edit Vehicle Details{% endblock %}
+
 {% block content %}
   <div class="container">
     <h1>Edit Vehicle Details</h1>
     <form method="POST" enctype="multipart/form-data">
+      
+      <!-- Vehicle Type -->
       <div class="mb-3">
         <label for="vehicle_type" class="form-label">Vehicle Type</label>
         <input type="text" class="form-control" id="vehicle_type" name="vehicle_type" value="{{ vehicle.vehicle_type }}" required>
+        {% if error_messages.vehicle_type %}
+          <small class="text-danger">{{ error_messages.vehicle_type }}</small>
+        {% endif %}
       </div>
+
+      <!-- Vehicle Make -->
       <div class="mb-3">
         <label for="vehicle_make" class="form-label">Vehicle Make</label>
         <input type="text" class="form-control" id="vehicle_make" name="vehicle_make" value="{{ vehicle.vehicle_make }}" required>
+        {% if error_messages.vehicle_make %}
+          <small class="text-danger">{{ error_messages.vehicle_make }}</small>
+        {% endif %}
       </div>
+
+      <!-- Vehicle Model -->
       <div class="mb-3">
         <label for="vehicle_model" class="form-label">Vehicle Model</label>
         <input type="text" class="form-control" id="vehicle_model" name="vehicle_model" value="{{ vehicle.vehicle_model }}" required>
+        {% if error_messages.vehicle_model %}
+          <small class="text-danger">{{ error_messages.vehicle_model }}</small>
+        {% endif %}
       </div>
+
+      <!-- License Plate Number -->
       <div class="mb-3">
         <label for="license_plate_number" class="form-label">License Plate Number</label>
         <input type="text" class="form-control" id="license_plate_number" name="license_plate_number" value="{{ vehicle.license_plate_number }}" required>
+        {% if error_messages.license_plate_number %}
+          <small class="text-danger">{{ error_messages.license_plate_number }}</small>
+        {% endif %}
       </div>
+
+      <!-- Maintenance Date (No Validation) -->
       <div class="mb-3">
-        <label for="maintenance_reminder_date" class="form-label">Maintenance Date</label>
+        <label for="maintenance_date" class="form-label">Maintenance Date</label>
         <input type="date" class="form-control" id="maintenance_date" name="maintenance_date" value="{{ vehicle.maintenance_date[:10] }}" required>
       </div>
+
+      <!-- Bill Image (No Validation) -->
       <div class="mb-3">
         <label for="bill_image" class="form-label">Upload New Bill Image</label>
         <input type="file" class="form-control" id="bill_image" name="bill_image">
       </div>
+
+      <!-- Existing Bill Image -->
+      {% if vehicle.bill_image %}
+        <div class="mb-3">
+          <label for="existing_bill_image" class="form-label">Current Bill Image</label>
+          <a href="{{ vehicle.bill_image }}" target="_blank">View Current Bill Image</a>
+        </div>
+      {% endif %}
+
+      <!-- Submit Button -->
       <button type="submit" class="btn btn-primary">Update Vehicle</button>
     </form>
   </div>
