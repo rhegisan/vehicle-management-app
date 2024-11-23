@@ -135,6 +135,13 @@ Add a search bar to the homepage and modify the backend to query DynamoDB with t
 Implement filtering options for users to filter vehicles by different attributes (e.g., make, model).
 
 
+lets for now the customer just submits the form with vehicle_number,email,phone,vehicle type, make and maintaince date then the data should be stored in some table called customer tables also a mail should be triggerd to the comanys email lets say a topic and based on that details an exisitng employee will add the vehicle date and contact the customer how is it?
 
-
-
+Workflow:
+Customer submits the form.
+Lambda is invoked:
+Sends an email with the appointment details.
+Saves the details to SQS.
+SQS stores the appointment details.
+Employee processes the appointment (once customer arrives):
+Read from the SQS queue and store the details in DynamoDB

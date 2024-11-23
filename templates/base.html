@@ -35,9 +35,15 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
                     {% if current_user.is_authenticated %}
-                        <li class="nav-item">
+                       <!-- Show Sign Up link only for admin -->
+                        {% if current_user.role == 'admin' %}
+                            <li class="nav-item">
+                                <a class="nav-link" href="{{ url_for('signup') }}">Sign Up</a>
+                            </li>
+                            <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('edit_profile') }}">PROFILE</a>
-                        </li>
+                            </li>
+                        {% endif %}
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('vehicle') }}">Add Vehicle</a>
                         </li>
@@ -85,8 +91,8 @@
         <p>&copy; 2024 Vehicle Management System. All rights reserved.</p>
         <p>
             <a href="www.linkedin.com/in/rhegisan" class="text-white" target="_blank">LINKEDIN</a>
-            <a href="https://github.com/rhegisan" class="text-white" target="_blank">GITHUB</a> |
-            <a href="https://www.cncf.io/training/kubestronaut/?_sft_lf-country=in&p=rhegisan-jebas" class="text-white" target="_blank">CNCF WEBSITE</a> |
+            <a href="https://github.com/rhegisan" class="text-white" target="_blank">GITHUB</a>
+            <a href="https://www.cncf.io/training/kubestronaut/?_sft_lf-country=in&p=rhegisan-jebas" class="text-white" target="_blank">CNCF WEBSITE</a>
         </p>
     </footer>
     

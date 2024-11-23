@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, Response
 import boto3
 from werkzeug.utils import secure_filename
 from datetime import datetime
@@ -20,12 +20,13 @@ login_manager.login_view = 'login'  # Redirects to the login page for unauthoriz
 login_manager.login_message = 'Please log in to access this page.'
 
 class User(UserMixin):
-    def __init__(self, username, password=None, name=None, email=None, phone_number=None):
+    def __init__(self, username, password=None, name=None, email=None, phone_number=None, role=None):
         self.id = username
         self.password = password
         self.name = name
         self.email = email
         self.phone_number = phone_number
+        self.role = role  # Add a role attribute
 
     @staticmethod
     def get(username):
@@ -35,12 +36,14 @@ class User(UserMixin):
             return User(
                 username=user_data['username'], 
                 password=user_data['password'], 
+                role=user_data.get('role', 'employee')
                 # name=user_data['name'],
                 # email=user_data['email'],
                 # phone_number=user_data['phone_number']
             )
         return None
-
+    def is_admin(self):
+        return self.role == 'admin'
     
     @login_manager.user_loader
     def load_user(username):
@@ -62,6 +65,7 @@ s3_client = boto3.client('s3', region_name=S3_REGION)
 sqs_client = boto3.client('sqs', region_name='us-east-1')
 sns_client = boto3.client('sns', region_name='us-east-1')
 lambda_client = boto3.client('lambda', region_name='us-east-1')
+sqs_queue_url='https://sqs.us-east-1.amazonaws.com/073995508140/appointmentQueue'
 
 # Flask configurations
 app.config['SECRET_KEY'] = '1234'  # For CSRF protection and session management
@@ -217,7 +221,7 @@ def retry_on_error(max_retries=5, delay=2):
 
 
 def check_or_create_sqs_queue():
-    queue_name = 'maintenanceQueue'
+    queue_name = 'appointmentQueue'
     try:
         # Try to get the queue URL to check if the queue exists
         sqs_client.get_queue_url(QueueName=queue_name)
@@ -242,8 +246,34 @@ def check_or_create_sqs_queue():
                 if retries == 5:
                     print("SQS Queue creation failed after 5 retries.")
 
-def check_or_create_sns_topic():
+def check_or_create_sns_maintenanceDueTopic():
     topic_name = 'MaintenanceDueTopic'
+    try:
+        # Try to get the topic's attributes to check if it exists
+        sns_client.get_topic_attributes(TopicArn=f'arn:aws:sns:us-east-1:073995508140:{topic_name}')
+        print(f"SNS Topic '{topic_name}' already exists.")
+    except sns_client.exceptions.NotFoundException:
+        print(f"SNS Topic '{topic_name}' does not exist. Creating it...")
+        response = sns_client.create_topic(Name=topic_name)
+        topic_arn = response['TopicArn']
+        
+        # Poll to confirm the SNS topic is created
+        print(f"Waiting for SNS Topic '{topic_name}' to be created...")
+        confirm_creation = False
+        retries = 0
+        while retries < 5 and not confirm_creation:
+            try:
+                sns_client.get_topic_attributes(TopicArn=topic_arn)
+                print(f"SNS Topic '{topic_name}' created successfully.")
+                confirm_creation = True
+            except sns_client.exceptions.NotFoundException:
+                time.sleep(2)  # Wait before retrying
+                retries += 1
+                if retries == 5:
+                    print("SNS Topic creation failed after 5 retries.")
+
+def check_or_create_sns_appointmentTopic():
+    topic_name = 'appointmentTopic'
     try:
         # Try to get the topic's attributes to check if it exists
         sns_client.get_topic_attributes(TopicArn=f'arn:aws:sns:us-east-1:073995508140:{topic_name}')
@@ -459,9 +489,10 @@ def setup_resources():
         futures.append(executor.submit(check_or_create_lambda_function))
         futures.append(executor.submit(create_tables_if_not_exist))  # Submit the DynamoDB table creation task
         futures.append(executor.submit(ensure_bucket_exists))  # Submit the S3 bucket creation task
-        futures.append(executor.submit(check_or_create_sns_topic))
+        futures.append(executor.submit(check_or_create_sns_maintenanceDueTopic))
+        futures.append(executor.submit(check_or_create_sns_appointmentTopic))
         futures.append(executor.submit(create_cloudwatch_rule))
-        # futures.append(executor.submit(check_or_create_sqs_queue))
+        futures.append(executor.submit(check_or_create_sqs_queue))
         # futures.append(executor.submit(subscribe_to_sns, topic_arn, lambda_function_arn, email_address))
         for future in futures:
             future.result()
@@ -511,27 +542,20 @@ def invoke_lambda_function(vehicle_number, maintenance_date):
     except Exception as e:
         print(f"Error invoking Lambda: {e}")
 
-# # Send notification to SNS when a vehicle is added or updated
-# def send_sns_notification(vehicle_number, maintenance_date):
-#     try:
-#         message = {
-#             "vehicle_number": vehicle_number,
-#             "maintenance_date": maintenance_date.isoformat()  # ISO format for date
-#         }
+
+def send_sns_notification(topic_arn="arn:aws:sns:us-east-1:073995508140:MaintenanceDueTopic", message="", subject="Notification"):
+    try:
+        topic_arn = ''
+        # Send the message to the SNS Topic
+        response = sns_client.publish(
+            TopicArn=topic_arn,
+            Message=json.dumps(message),
+            Subject=subject
+        )
         
-#         # SNS Topic ARN (Replace with your actual ARN)
-#         topic_arn = 'arn:aws:sns:us-east-1:073995508140:MaintenanceDueTopic'
-        
-#         # Send message to SNS
-#         response = sns_client.publish(
-#             TopicArn=topic_arn,
-#             Message=json.dumps(message),
-#             Subject="Vehicle Maintenance Notification"
-#         )
-        
-#         print(f"SNS notification sent for vehicle {vehicle_number}, response: {response}")
-#     except Exception as e:
-#         print(f"Error sending SNS notification: {e}")
+        print(f"SNS notification sent, response: {response}")
+    except Exception as e:
+        print(f"Error sending SNS notification: {e}")
 
 def delete_file_from_s3(filename):
     s3_client = boto3.client('s3')
@@ -541,9 +565,117 @@ def delete_file_from_s3(filename):
     except Exception as e:
         print(f"Error deleting file {filename} from S3: {e}")
 
+
+@app.route('/')
+def landing_page():
+    return render_template('landing.html')
+    
+# Route to submit an appointment
+@app.route('/book_appointment', methods=['GET', 'POST'])
+@login_required
+def book_appointment():
+    if request.method == 'POST':
+        # Capture appointment details from the form
+        customer_fullname = request.form['full_name']
+        vehicle_number = request.form['vehicle_number']
+        vehicle_type = request.form['vehicle_type']
+        vehicle_make = request.form['vehicle_make']
+        vehicle_model = request.form['vehicle_model']
+        maintenance_date = request.form['maintenance_date']
+        customer_email = request.form['email']
+        customer_phone = request.form['phone']
+
+        # Create the appointment details message
+        appointment_message = {
+            'customer_fullname': customer_fullname,
+            'vehicle_number': vehicle_number,
+            'vehicle_type': vehicle_type,
+            'vehicle_make': vehicle_make,
+            'vehicle_model': vehicle_model,
+            'maintenance_date': maintenance_date,
+            'customer_email': customer_email,
+            'customer_phone': customer_phone
+        }
+
+        # Send appointment message to SQS
+        response = sqs_client.send_message(
+            QueueUrl=sqs_queue_url,
+            MessageBody=json.dumps(appointment_message)
+        )
+
+        # Send SNS notification (email to the company)
+        sns_client.publish(
+            TopicArn='arn:aws:sns:us-east-1:073995508140:appointmentTopic',
+            Message=json.dumps(appointment_message),
+            Subject="New Appointment Request"
+        )
+
+        flash('Appointment request submitted successfully! We will contact you soon.', 'success')
+        return redirect(url_for('landing_page'))  # Redirect to the home page
+
+    return render_template('landing_page.html')
+
+@app.route('/appointments', methods=['GET'])
+def appointments_page():
+    try:
+        # Fetch messages from SQS
+        response = sqs_client.receive_message(
+            QueueUrl=sqs_queue_url,
+            MaxNumberOfMessages=10,  # Fetch up to 10 messages
+            WaitTimeSeconds=10      # Enable long polling
+        )
+
+        appointments = []
+        if 'Messages' in response:
+            for message in response['Messages']:
+                body = json.loads(message['Body'])  # Parse JSON body
+                appointments.append(body)
+
+                # Optionally delete the message after fetching
+                sqs_client.delete_message(
+                    QueueUrl=sqs_queue_url,
+                    ReceiptHandle=message['ReceiptHandle']
+                )
+
+        return render_template('appointments.html', appointments=appointments)
+    except Exception as e:
+        print(f"Error polling appointments: {e}")
+        return render_template('appointments.html', appointments=[], error="Failed to fetch appointments")
+
+
+@app.route('/download_appointments_txt', methods=['GET'])
+def download_appointments_txt():
+    try:
+        # Fetch messages from SQS (same logic as in your appointments page)
+        response = sqs_client.receive_message(
+            QueueUrl=sqs_queue_url,
+            MaxNumberOfMessages=10,  # Fetch up to 10 messages
+            WaitTimeSeconds=2      # Enable long polling
+        )
+
+        appointments = []
+        if 'Messages' in response:
+            for message in response['Messages']:
+                body = json.loads(message['Body'])  # Parse JSON body
+                appointments.append(body)
+
+        # Convert the appointments list to JSON format (pretty-printed)
+        json_data = json.dumps(appointments, indent=2)
+
+        # Create a response with the JSON data as a .txt file
+        response = Response(json_data, mimetype='text/plain')
+        response.headers['Content-Disposition'] = 'attachment; filename=appointments.txt'
+        return response
+    except Exception as e:
+        print(f"Error downloading appointments: {e}")
+        return "Failed to download appointments data."
+
 # Signup Route
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
+    if not current_user.is_authenticated or current_user.role != 'admin':
+        flash('You do not have permission to access this page.', 'danger')
+        return redirect(url_for('landing_page'))
     if request.method == 'POST':
         username = request.form['username']
         full_name = request.form['full_name']
@@ -551,6 +683,7 @@ def signup():
         phone_number = request.form['phone_number']
         password = request.form['password']
         confirm_password = request.form['confirm_password']
+        role = request.form['role']
 
         # Check if passwords match
         if password != confirm_password:
@@ -572,7 +705,8 @@ def signup():
             'password': boto3.dynamodb.types.Binary(hashed_password),
             'full_name': full_name,
             'email': email,
-            'phone_number': phone_number
+            'phone_number': phone_number,
+            'role': role
         }
 
         # Store the user in DynamoDB
@@ -588,12 +722,16 @@ def signup():
 @app.route('/edit_profile', methods=['GET', 'POST'])
 @login_required
 def edit_profile():
+    if not current_user.is_authenticated or current_user.role != 'admin':
+        flash('You do not have permission to access this page.', 'danger')
+        return redirect(url_for('landing_page'))
     if request.method == 'POST':
         full_name = request.form['full_name']
         email = request.form['email']
         phone_number = request.form['phone_number']
         new_password = request.form['password']
         confirm_password = request.form['confirm_password']
+        role = request.form['role']
         
         # Check if passwords match when a new password is entered
         if new_password and new_password != confirm_password:
@@ -609,7 +747,8 @@ def edit_profile():
         expression_values = {
             ':full_name': full_name,
             ':email': email,
-            ':phone_number': phone_number
+            ':phone_number': phone_number,
+            ':role': role
         }
 
         # If a new password is provided, update it as well
@@ -623,6 +762,35 @@ def edit_profile():
             UpdateExpression=update_expression,
             ExpressionAttributeValues=expression_values
         )
+
+        # Construct the message for SNS notification
+        message = {
+            "user_id": current_user.id,
+            "full_name": full_name,
+            "email": email,
+            "phone_number": phone_number,
+            "updated_fields": []
+        }
+
+        # Check which fields were updated and add them to the message
+        if new_password:
+            message["updated_fields"].append("password")
+        
+        if full_name != current_user.full_name:
+            message["updated_fields"].append("full_name")
+        
+        if email != current_user.email:
+            message["updated_fields"].append("email")
+        
+        if phone_number != current_user.phone_number:
+            message["updated_fields"].append("phone_number")
+        
+        # Send SNS notification about the profile update
+        send_sns_notification(
+            topic_arn="arn:aws:sns:us-east-1:073995508140:ProfileUpdateTopic",
+            message=message,
+            subject="User Profile Updated"
+        )
         
         flash('Profile updated successfully!', 'success')
         return redirect(url_for('home'))
@@ -635,7 +803,8 @@ def edit_profile():
                            username=user['username'], 
                            full_name=user['full_name'], 
                            email=user['email'], 
-                           phone_number=user['phone_number'])
+                           phone_number=user['phone_number'],
+                           role=user['role'])
 
 # Login Route
 @app.route('/login', methods=['GET', 'POST'])
@@ -656,7 +825,7 @@ def login():
     return render_template('login.html')
 
 
-@app.route('/')
+@app.route('/home', methods=['GET', 'POST'])
 @login_required
 def home():
     # Fetch vehicles linked to the current user
@@ -750,6 +919,19 @@ def vehicle():
         
         # send_sns_notification(vehicle_number, maintenance_date)
         # invoke_lambda_function(vehicle_number, maintenance_date.isoformat)
+        # Prepare the message to send
+        message = {
+            "vehicle_number": vehicle_number,
+            "maintenance_date": maintenance_date.isoformat(),
+            "action": "Vehicle Added"
+        }
+
+        # Send SNS notification when a vehicle is added
+        send_sns_notification(
+            topic_arn="arn:aws:sns:us-east-1:073995508140:MaintenanceDueTopic",
+            message=message,
+            subject="Vehicle Added Notification"
+        )
 
 
         flash('Vehicle maintenance details added successfully!', 'success')
@@ -819,7 +1001,7 @@ def edit_vehicle(vehicle_number):
             ExpressionAttributeValues=expression_values
         )
 
-        # send_sns_notification(vehicle_number, maintenance_date)
+        send_sns_notification(vehicle_number, maintenance_date)
         # invoke_lambda_function(vehicle_number, maintenance_date.isoformat())
 
         flash('Vehicle details updated successfully!', 'success')

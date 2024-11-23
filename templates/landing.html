@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}Appointment Booking{% endblock %}
+
+{% block content %}
+<!-- Hero Section for Landing Page -->
+<div class="hero">
+    <h1>Welcome to Vehicle Maintenance Booking</h1>
+    <p>Book an appointment for your vehicle's maintenance today!</p>
+</div>
+
+<!-- Appointment Booking Form Section -->
+<div class="container mt-5">
+    <h2>Book Your Vehicle Maintenance Appointment</h2>
+    <form method="POST" action="{{ url_for('book_appointment') }}">
+        <div class="mb-3">
+            <label for="vehicle_number" class="form-label">Vehicle Number</label>
+            <input type="text" class="form-control" id="vehicle_number" name="vehicle_number" required>
+        </div>
+        <div class="mb-3">
+            <label for="vehicle_type" class="form-label">Vehicle Type</label>
+            <input type="text" class="form-control" id="vehicle_type" name="vehicle_type" required>
+        </div>
+        <div class="mb-3">
+            <label for="vehicle_make" class="form-label">Vehicle Make</label>
+            <input type="text" class="form-control" id="vehicle_make" name="vehicle_make" required>
+        </div>
+        <div class="mb-3">
+            <label for="maintenance_date" class="form-label">Maintenance Date</label>
+            <input type="date" class="form-control" id="maintenance_date" name="maintenance_date" required>
+        </div>
+        <div class="mb-3">
+            <label for="email" class="form-label">Your Email</label>
+            <input type="email" class="form-control" id="email" name="email" required>
+        </div>
+        <div class="mb-3">
+            <label for="phone" class="form-label">Your Phone Number</label>
+            <input type="text" class="form-control" id="phone" name="phone" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Submit Appointment</button>
+    </form>
+</div>
+
+{% endblock %}
+
+{% block styles %}
+<style>
+    /* Hero Section Custom Style */
+    .hero {
+        background: linear-gradient(135deg, #ff9e2c, #ff6a00);
+        color: white;
+        padding: 80px 0;
+        text-align: center;
+    }
+
+    .hero h1 {
+        font-size: 3rem;
+        font-weight: bold;
+    }
+
+    .hero p {
+        font-size: 1.25rem;
+        margin-bottom: 30px;
+    }
+
+    /* Form Styling */
+    .container {
+        background-color: #f4f6f9;
+        padding: 30px;
+        border-radius: 10px;
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .container h2 {
+        font-size: 2rem;
+        margin-bottom: 20px;
+    }
+
+    .form-control {
+        border-radius: 10px;
+        border: 1px solid #ddd;
+        padding: 15px;
+        font-size: 1.1rem;
+    }
+
+    .form-control:focus {
+        box-shadow: 0 0 10px rgba(0, 123, 255, 0.5);
+    }
+
+    .btn-primary {
+        background-color: #ff6a00;
+        border-color: #ff6a00;
+    }
+
+    .btn-primary:hover {
+        background-color: #e55d00;
+        border-color: #e55d00;
+    }
+</style>
+{% endblock %}

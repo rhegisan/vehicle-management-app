@@ -29,6 +29,15 @@
         <input type="text" class="form-control" id="phone_number" name="phone_number" value="{{ phone_number }}" required>
       </div>
       
+      <!-- Role -->
+      <div class="form-group">
+        <label for="role">Role</label>
+        <select class="form-control" id="role" name="role" required>
+          <option value="admin" {% if role == 'admin' %}selected{% endif %}>Admin</option>
+          <option value="employee" {% if role == 'employee' %}selected{% endif %}>Employee</option>
+        </select>
+      </div>
+
       <!-- New Password (Optional) -->
       <div class="form-group">
         <label for="password">New Password (Leave blank to keep current password)</label>
