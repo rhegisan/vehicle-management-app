@@ -5,5 +5,10 @@ myFlaskEnv/
 installation.sh
 lambda_function.zip
 notes
+<<<<<<< HEAD
 # wsgi.py
 # .ebextensions/
+=======
+wsgi.py
+.ebextensions/
+>>>>>>> db540ce79d82cf1a6e723773060efefa30c0291c
