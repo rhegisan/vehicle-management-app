@@ -1,2 +1,7 @@
 __pycache__/
-models
+models/
+aws/
+myFlaskEnv/
+installation.sh
+lambda_function.zip
+notes
