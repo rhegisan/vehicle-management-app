@@ -73,7 +73,7 @@ def create_application():
     vehicle_service_history = dynamodb.Table('vehicle_service_history')
 
     # AWS S3 setup
-    S3_BUCKET_NAME = 'rhegi'  # Replace with your S3 bucket name
+    S3_BUCKET_NAME = 'rhegisan'  # Replace with your S3 bucket name
     S3_REGION = 'us-east-1'  # Use your region
     s3_client = boto3.client('s3', region_name=S3_REGION)
 
@@ -81,7 +81,7 @@ def create_application():
     sqs_client = boto3.client('sqs', region_name='us-east-1')
     sns_client = boto3.client('sns', region_name='us-east-1')
     lambda_client = boto3.client('lambda', region_name='us-east-1')
-    sqs_queue_url='https://sqs.us-east-1.amazonaws.com/073995508140/appointmentQueue'
+    sqs_queue_url='https://sqs.us-east-1.amazonaws.com/180026181162/appointmentQueue'
 
     # # Flask configurations
     # application.config['SECRET_KEY'] = '1234'  # For CSRF protection and session management
@@ -266,7 +266,7 @@ def create_application():
         topic_name = 'MaintenanceDueTopic'
         try:
             # Try to get the topic's attributes to check if it exists
-            sns_client.get_topic_attributes(TopicArn=f'arn:aws:sns:us-east-1:073995508140:{topic_name}')
+            sns_client.get_topic_attributes(TopicArn=f'arn:aws:sns:us-east-1:180026181162:{topic_name}')
             print(f"SNS Topic '{topic_name}' already exists.")
         except sns_client.exceptions.NotFoundException:
             print(f"SNS Topic '{topic_name}' does not exist. Creating it...")
@@ -292,7 +292,7 @@ def create_application():
         topic_name = 'appointmentTopic'
         try:
             # Try to get the topic's attributes to check if it exists
-            sns_client.get_topic_attributes(TopicArn=f'arn:aws:sns:us-east-1:073995508140:{topic_name}')
+            sns_client.get_topic_attributes(TopicArn=f'arn:aws:sns:us-east-1:180026181162:{topic_name}')
             print(f"SNS Topic '{topic_name}' already exists.")
         except sns_client.exceptions.NotFoundException:
             print(f"SNS Topic '{topic_name}' does not exist. Creating it...")
@@ -349,7 +349,7 @@ def create_application():
             response = lambda_client.create_function(
                 FunctionName=function_name,
                 Runtime='python3.11',
-                Role='arn:aws:iam::073995508140:role/LabRole',  # Replace with your ARN if different
+                Role='arn:aws:iam::180026181162:role/LabRole',  # Replace with your ARN if different
                 Handler='lambda_function.lambda_handler',
                 Code={'ZipFile': zip_data},
                 Timeout=30,
@@ -487,7 +487,7 @@ def create_application():
                 Targets=[
                     {
                         'Id': '1',
-                        'Arn': 'arn:aws:lambda:us-east-1:073995508140:function:VehicleMaintenanceLambda',  # Your Lambda ARN
+                        'Arn': 'arn:aws:lambda:us-east-1:180026181162:function:VehicleMaintenanceLambda',  # Your Lambda ARN
                     },
                 ]
             )
@@ -544,7 +544,7 @@ def create_application():
         }
 
         # Replace with your Lambda ARN
-        lambda_arn = "arn:aws:lambda:us-east-1:073995508140:function:VehicleMaintenanceLambda"
+        lambda_arn = "arn:aws:lambda:us-east-1:180026181162:function:VehicleMaintenanceLambda"
 
         # Invoke the Lambda function
         try:
@@ -559,7 +559,7 @@ def create_application():
             print(f"Error invoking Lambda: {e}")
 
 
-    def send_sns_notification(topic_arn="arn:aws:sns:us-east-1:073995508140:MaintenanceDueTopic", message="", subject="Notification"):
+    def send_sns_notification(topic_arn="arn:aws:sns:us-east-1:180026181162:MaintenanceDueTopic", message="", subject="Notification"):
         try:
             topic_arn = ''
             # Send the message to the SNS Topic
@@ -623,7 +623,7 @@ def create_application():
 
             # Send SNS notification (email to the company)
             sns_client.publish(
-                TopicArn='arn:aws:sns:us-east-1:073995508140:appointmentTopic',
+                TopicArn='arn:aws:sns:us-east-1:180026181162:appointmentTopic',
                 Message=json.dumps(appointment_message),
                 Subject="New Appointment Request"
             )
@@ -978,7 +978,7 @@ def create_application():
 
             # Send SNS notification when a vehicle is added
             send_sns_notification(
-                topic_arn="arn:aws:sns:us-east-1:073995508140:MaintenanceDueTopic",
+                topic_arn="arn:aws:sns:us-east-1:180026181162:MaintenanceDueTopic",
                 message=message,
                 subject="Vehicle Added Notification"
             )
