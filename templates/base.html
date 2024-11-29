@@ -3,53 +3,58 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}VEHICLE MANAGEMENT APP{% endblock %}</title>
+    <title>{% block title %}JOHN GARAGE SHOP {% endblock %}</title>
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         html, body {
-            height: 100%;   /* Ensure the body takes full height */
-            margin: 0;      /* Remove default margin */
-            display: flex;  /* Use flexbox for layout */
-            flex-direction: column; /* Stack items vertically */
+            /* full height for body, Use flexbox for layout, Stack items vertically */
+            height: 100%; 
+            margin: 0; 
+            display: flex;
+            flex-direction: column;
         }
 
         .container {
-            flex: 1;   /* Make the content area flexible, so it takes available space */
+            /* Make the content area flexible, so it takes available space */
+            flex: 1;   
         }
 
         footer {
-            margin-top: auto;  /* Push the footer to the bottom of the page */
+            /* Push the footer to the bottom of the page */
+            margin-top: auto;
         }
     </style>
 </head>
 <body>
 
-    <!-- Navigation Bar -->
+    <!-- Navigation Bar for the website-->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container-fluid">
-            <a class="navbar-brand" href="{{ url_for('home') }}">VEHICLES MANAGEMENT CONSOLE</a>
+            <a class="navbar-brand" href="{{ url_for('home') }}">JOHN GARAGE SHOP</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
                     {% if current_user.is_authenticated %}
-                       <!-- Show Sign Up link only for admin -->
+                       <!-- Shows Sign Up and Profile link only for admin -->
                         {% if current_user.role == 'admin' %}
                             <li class="nav-item">
-                                <a class="nav-link" href="{{ url_for('signup') }}">Sign Up</a>
+                                <a class="nav-link" href="{{ url_for('signup') }}">SignUp</a>
                             </li>
                             <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('edit_profile') }}">PROFILE</a>
+                            <a class="nav-link" href="{{ url_for('edit_profile') }}">Profile</a>
                             </li>
                         {% endif %}
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('vehicle') }}">Add Vehicle</a>
+                            <a class="nav-link" href="{{ url_for('vehicle') }}">Vehicle</a>
                         </li>
-                         <!-- Add Service History Link -->
                          <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('add_service_history', vehicle_number='vehicle_number') }}">Add Service History</a>
+                            <a class="nav-link" href="{{ url_for('add_service_history', vehicle_number='vehicle_number') }}">Service History</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('appointments') }}">Appointments</a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
@@ -58,16 +63,13 @@
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('login') }}">Login</a>
                         </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('signup') }}">Sign Up</a>
-                        </li>
                     {% endif %}
                 </ul>
             </div>
         </div>
     </nav>
 
-    <!-- Flash Messages Section -->
+    <!-- Code to Flash the messages on the screen -->
     <div class="container mt-3">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
@@ -80,15 +82,15 @@
         {% endwith %}
     </div>
 
-    <!-- Main Content Section -->
+    <!-- The code for main content (pages which extends the base.html) goes in the below section -->
     <div class="container mt-5">
         {% block content %}
         {% endblock %}
     </div>
 
-    <!-- Footer -->
+    <!-- This is the Footer code which is  -->
     <footer class="bg-dark text-white text-center py-3 mt-5">
-        <p>&copy; 2024 Vehicle Management System. All rights reserved.</p>
+        <p>&copy; 2024 Garage Management System. All rights reserved.</p>
         <p>
             <a href="www.linkedin.com/in/rhegisan" class="text-white" target="_blank">LINKEDIN</a>
             <a href="https://github.com/rhegisan" class="text-white" target="_blank">GITHUB</a>
@@ -97,8 +99,11 @@
     </footer>
     
 
-    <!-- Prevent going back to the logged-out page only if logged out
-     {% if session.get('logged_out') %}
+    <!-- Tried the below code to secure access to the page after logout 
+     but it disables the inbetween pages traversals, instead used Flask session for handling 
+     this scenario  -->
+
+     <!-- {% if session.get('logged_out') %}
      <script type="text/javascript">
          window.onload = function() {
              window.history.forward();
@@ -109,9 +114,9 @@
              }
          };
      </script>
-     {% endif %} -->
+     {% endif %} --> 
 
-    <!-- Bootstrap 5 JS Bundle (includes Popper.js) -->
+    <!-- Bootstrap 5 JS Bundle -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"></script>
 
 </body>

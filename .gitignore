@@ -7,3 +7,4 @@ lambda_function.zip
 notes
 wsgi.py
 .ebextensions/
+*.zip

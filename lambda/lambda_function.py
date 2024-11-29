@@ -8,7 +8,7 @@ def lambda_handler(event, context):
 
     # Initialize SNS client
     sns_client = boto3.client('sns')
-    sns_topic_arn = 'arn:aws:sns:us-east-1:073995508140:MaintenanceDueTopic'  # Replace with your SNS Topic ARN
+    sns_topic_arn = 'arn:aws:sns:us-east-1:180026181162:MaintenanceDueTopic'
 
     # Get today's date
     today = datetime.datetime.now().date()
@@ -22,10 +22,9 @@ def lambda_handler(event, context):
             # Extract required details
             maintenance_date_str = vehicle.get('maintenance_date')
             vehicle_number = vehicle.get('vehicle_number')
-            username = vehicle.get('username')  # Add 'username' to your table records
+            username = vehicle.get('username')
 
             if not maintenance_date_str or not vehicle_number or not username:
-                print(f"Vehicle record missing required fields: {vehicle}")
                 continue
 
             # Parse maintenance date
@@ -62,8 +61,5 @@ def lambda_handler(event, context):
                     }
                 }
             )
-            print(f"Sent alert for vehicle {vehicle_number}: {alert_message}")
-
     except Exception as e:
-        print(f"Error: {e}")
         raise e

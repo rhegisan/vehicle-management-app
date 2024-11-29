@@ -22,14 +22,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Make port 5000 available to the world outside this container
 EXPOSE 3000
 
+# Define environment variable for Flask
 ENV FLASK_APP=application.py
-# # Define environment variables (optional)
-# ENV FLASK_APP=app.py
-# ENV FLASK_RUN_HOST=0.0.0.0
-# ENV FLASK_RUN_PORT=3000
-
-# Run the Flask app
-# CMD ["python", "application.py"]
 
 # Set the WSGI server (Gunicorn) command for starting the app
 CMD ["gunicorn", "-b", "0.0.0.0:3000", "application:create_application()"]

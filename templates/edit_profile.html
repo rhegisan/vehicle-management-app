@@ -4,44 +4,38 @@
   <div class="container">
     <h1>Edit Profile</h1>
     <form method="POST">
-      <!-- Username (Read-only) -->
+      <!-- Username is kept read only -->
       <div class="form-group">
         <label for="username">Username</label>
         <input type="text" class="form-control" id="username" name="username" value="{{ username }}" required readonly>
         <small class="form-text text-muted">Username cannot be changed.</small>
       </div>
       
-      <!-- Full Name -->
       <div class="form-group">
         <label for="full_name">Full Name</label>
         <input type="text" class="form-control" id="full_name" name="full_name" value="{{ full_name }}" required placeholder="Enter your full name">
         <small class="form-text text-danger">{{ error_messages.get('full_name', '') }}</small>
       </div>
       
-      <!-- Email -->
       <div class="form-group">
         <label for="email">Email</label>
         <input type="email" class="form-control" id="email" name="email" value="{{ email }}" required placeholder="Enter your email address">
         <small class="form-text text-danger">{{ error_messages.get('email', '') }}</small>
       </div>
       
-      <!-- Phone Number -->
       <div class="form-group">
         <label for="phone_number">Phone Number</label>
         <input type="text" class="form-control" id="phone_number" name="phone_number" value="{{ phone_number }}" required placeholder="Enter your phone number">
         <small class="form-text text-danger">{{ error_messages.get('phone_number', '') }}</small>
       </div>
       
-      <!-- Role -->
       <div class="form-group">
         <label for="role">Role</label>
-        <select class="form-control" id="role" name="role" required>
-          <option value="admin" {% if role == 'admin' %}selected{% endif %}>Admin</option>
-          <option value="employee" {% if role == 'employee' %}selected{% endif %}>Employee</option>
-        </select>
+        <input type="text" class="form-control" id="role" name="role" value="{{ role }}" required placeholder="Enter your role">
       </div>
+    
 
-      <!-- New Password (Optional) -->
+      <!-- The new password field is kept as optional  -->
       <div class="form-group">
         <label for="password">New Password (Leave blank to keep current password)</label>
         <input type="password" class="form-control" id="password" name="password" placeholder="Enter a new password (min. 8 characters)">

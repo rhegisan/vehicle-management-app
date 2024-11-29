@@ -6,21 +6,7 @@
 <div class="container">
     <h1 class="mb-4">Appointments</h1>
 
-    {% if appointments %}
-        <div id="appointments" class="mt-3">
-            {% for appointment in appointments %}
-                <div class="card mb-3">
-                    <div class="card-body">
-                        <h5 class="card-title">Raw Appointment Data</h5>
-                        <pre>{{ appointment | tojson(indent=2) }}</pre>
-                    </div>
-                </div>
-            {% endfor %}
-        </div>
-        <!-- Button to download appointments data as a .txt file -->
-        <a href="{{ url_for('download_appointments_txt') }}" class="btn btn-warning mt-3">Download Appointments as TXT</a>
-    {% else %}
-        <div class="alert alert-info">No appointments found.</div>
-    {% endif %}
+    <!-- Button to trigger the download of the appointments file -->
+    <a href="{{ url_for('appointments') }}" class="btn btn-warning mt-3">Download Appointments as TXT</a>
 </div>
 {% endblock %}

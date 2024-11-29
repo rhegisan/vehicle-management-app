@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+
+{% block title %}JOHN GARAGE SHOP{% endblock %}
+
+{% block content %}
+<!-- This is the section for Landing Page -->
+<div class="hero">
+    <h1>Welcome to John's Garage Shop</h1>
+    <p>We keep your vehicle in healthy condition with expert care and timely maintenance.</p>
+</div>
+
+<!-- Garage Features Section -->
+<div class="container mt-5">
+    <h2>Our Garage Features</h2>
+    <div class="row">
+        <!-- Feature 1: Maintenance Reminder -->
+        <div class="col-md-4">
+            <div class="feature-box text-center">
+                <h4>Maintenance Reminder</h4>
+                <p>Never miss an appointment with our maintenance reminders. We’ll personally call and notify you when it’s time for service!</p>
+            </div>
+        </div>
+
+        <!-- Feature 2: Vehicle Care -->
+        <div class="col-md-4">
+            <div class="feature-box text-center">
+                <h4>Vehicle Care</h4>
+                <p>Our experts ensure your vehicle receives the best care with professional cleaning and servicing.</p>
+            </div>
+        </div>
+
+        <!-- Feature 3: Expert Mechanics -->
+        <div class="col-md-4">
+            <div class="feature-box text-center">
+                <h4>Expert Mechanics</h4>
+                <p>Our team of expert mechanics provides top-notch service for your vehicle's needs.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Appointment Booking Form Section -->
+<div class="container mt-5">
+    <h2>Book Your Vehicle Maintenance Appointment</h2>
+
+    <!-- Flash Success Message -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="alert alert-success">
+                {% for category, message in messages %}
+                    <p>{{ message }}</p>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <!-- Form for Appointment -->
+    <form method="POST" action="{{ url_for('landing_page') }}">
+        <!-- Full Name -->
+        <div class="mb-3">
+            <label for="full_name" class="form-label">Full Name</label>
+            <input type="text" class="form-control" id="full_name" name="full_name" 
+                value="{{ form_data.get('full_name', '') }}" required>
+            <small class="form-text text-danger">{{ error_messages.get('full_name', '') }}</small>
+        </div>
+
+        <!-- Vehicle Number -->
+        <div class="mb-3">
+            <label for="vehicle_number" class="form-label">Vehicle Number</label>
+            <input type="text" class="form-control" id="vehicle_number" name="vehicle_number" 
+                value="{{ form_data.get('vehicle_number', '') }}" required>
+            <small class="form-text text-danger">{{ error_messages.get('vehicle_number', '') }}</small>
+        </div>
+
+        <!-- Vehicle Type -->
+        <div class="mb-3">
+            <label for="vehicle_type" class="form-label">Vehicle Type</label>
+            <input type="text" class="form-control" id="vehicle_type" name="vehicle_type" 
+                value="{{ form_data.get('vehicle_type', '') }}" required>
+            <small class="form-text text-danger">{{ error_messages.get('vehicle_type', '') }}</small>
+        </div>
+
+        <!-- Vehicle Make -->
+        <div class="mb-3">
+            <label for="vehicle_make" class="form-label">Vehicle Make</label>
+            <input type="text" class="form-control" id="vehicle_make" name="vehicle_make" 
+                value="{{ form_data.get('vehicle_make', '') }}" required>
+            <small class="form-text text-danger">{{ error_messages.get('vehicle_make', '') }}</small>
+        </div>
+
+        <!-- Vehicle Model -->
+        <div class="mb-3">
+            <label for="vehicle_model" class="form-label">Vehicle Model</label>
+            <input type="text" class="form-control" id="vehicle_model" name="vehicle_model" 
+                value="{{ form_data.get('vehicle_model', '') }}" required>
+            <small class="form-text text-danger">{{ error_messages.get('vehicle_model', '') }}</small>
+        </div>
+
+        <!-- Maintenance Date (No Validation) -->
+        <div class="mb-3">
+            <label for="maintenance_date" class="form-label">Maintenance Date</label>
+            <input type="date" class="form-control" id="maintenance_date" name="maintenance_date" 
+                value="{{ form_data.get('maintenance_date', '') }}" required>
+        </div>
+
+        <!-- Email -->
+        <div class="mb-3">
+            <label for="email" class="form-label">Your Email</label>
+            <input type="email" class="form-control" id="email" name="email" 
+                value="{{ form_data.get('email', '') }}" required>
+            <small class="form-text text-danger">{{ error_messages.get('email', '') }}</small>
+        </div>
+
+        <!-- Phone -->
+        <div class="mb-3">
+            <label for="phone" class="form-label">Your Phone Number</label>
+            <input type="text" class="form-control" id="phone" name="phone" 
+                value="{{ form_data.get('phone', '') }}" required>
+            <small class="form-text text-danger">{{ error_messages.get('phone', '') }}</small>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Submit Appointment</button>
+    </form>
+</div>
+
+{% endblock %}
+
+{% block styles %}
+<style>
+    /* Hero Section Custom Style */
+    .hero {
+        background: linear-gradient(135deg, #ff9e2c, #ff6a00);
+        color: white;
+        padding: 80px 0;
+        text-align: center;
+    }
+
+    .hero h1 {
+        font-size: 3rem;
+        font-weight: bold;
+    }
+
+    .hero p {
+        font-size: 1.25rem;
+        margin-bottom: 30px;
+    }
+
+    /* Garage Features Section */
+    .feature-box {
+        background-color: #f8f9fa;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .feature-box h4 {
+        font-size: 1.5rem;
+        margin-top: 15px;
+    }
+
+    .feature-box p {
+        font-size: 1.1rem;
+        color: #555;
+    }
+
+    /* Form Styling */
+    .container {
+        background-color: #f4f6f9;
+        padding: 30px;
+        border-radius: 10px;
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .container h2 {
+        font-size: 2rem;
+        margin-bottom: 20px;
+    }
+
+    .form-control {
+        border-radius: 10px;
+        border: 1px solid #ddd;
+        padding: 15px;
+        font-size: 1.1rem;
+    }
+
+    .form-control:focus {
+        box-shadow: 0 0 10px rgba(0, 123, 255, 0.5);
+    }
+
+    .btn-primary {
+        background-color: #ff6a00;
+        border-color: #ff6a00;
+    }
+
+    .btn-primary:hover {
+        background-color: #e55d00;
+        border-color: #e55d00;
+    }
+
+    /* Media Queries for Responsiveness */
+    @media (max-width: 767px) {
+        .hero h1 {
+            font-size: 2rem;
+        }
+
+        .hero p {
+            font-size: 1rem;
+        }
+
+        .feature-box {
+            margin-bottom: 20px;
+        }
+    }
+</style>
+{% endblock %}

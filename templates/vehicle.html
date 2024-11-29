@@ -42,13 +42,13 @@
         <small class="form-text text-danger">{{ error_messages.get('license_plate_number', '') }}</small>
       </div>
 
-      <!-- Maintenance Date (No validation) -->
+      <!-- Maintenance Date  -->
       <div class="form-group">
         <label for="maintenance_reminder_date">Maintenance Date</label>
         <input type="date" class="form-control" id="maintenance_reminder_date" name="maintenance_date" required value="{{ request.form.get('maintenance_date', '') }}">
       </div>
 
-      <!-- Bill Image Upload (No validation for this field) -->
+      <!-- Bill Image Upload -->
       <div class="form-group">
         <label for="bill_image">Upload Bill Image (PDF, JPG, PNG, etc.)</label>
         <input type="file" class="form-control" id="bill_image" name="bill_image" required>

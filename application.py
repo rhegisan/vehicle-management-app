@@ -1,12 +1,12 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, Response
+from flask import Flask, render_template, request, redirect, url_for, flash, Response
 import boto3
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from werkzeug.utils import secure_filename
 from datetime import datetime
 import bcrypt
 import time
-from botocore.exceptions import ClientError, EndpointConnectionError
+from botocore.exceptions import ClientError
 import concurrent.futures
-from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 import json
 import os
 import zipfile
@@ -15,7 +15,7 @@ from vehicle_form_validator import FieldValidator
 import logging
 import watchtower
 
-
+# Creating a application as function for wsgi to consider it as an entrypoint
 def create_application():
     application = Flask(__name__)
 
@@ -23,6 +23,7 @@ def create_application():
 
     # Configure logging to send logs to CloudWatch
     logger = logging.getLogger()
+    # Configuring it to capture INFO, WARNING, ERROR and CRITICAL
     logger.setLevel(logging.INFO)
 
     # Create a CloudWatch log handler
@@ -32,9 +33,11 @@ def create_application():
     logger.addHandler(log_handler)
 
     login_manager = LoginManager(application)
-    login_manager.login_view = 'login'  # Redirects to the login page for unauthorized users
+    # Redirects to the login page for unauthorized users
+    login_manager.login_view = 'login'
     login_manager.login_message = 'Please log in to access this page.'
 
+    # Flask login manager to handle the login and to manage the session
     class User(UserMixin):
         def __init__(self, username, password=None, name=None, email=None, phone_number=None, role=None):
             self.id = username
@@ -42,7 +45,7 @@ def create_application():
             self.name = name
             self.email = email
             self.phone_number = phone_number
-            self.role = role  # Add a role attribute
+            self.role = role # for checking whether it is admin or employee
 
         @staticmethod
         def get(username):
@@ -53,9 +56,6 @@ def create_application():
                     username=user_data['username'], 
                     password=user_data['password'], 
                     role=user_data.get('role', 'employee')
-                    # name=user_data['name'],
-                    # email=user_data['email'],
-                    # phone_number=user_data['phone_number']
                 )
             return None
         def is_admin(self):
@@ -66,31 +66,43 @@ def create_application():
             return User.get(username)
 
 
-    # AWS DynamoDB setup (Make sure you have AWS credentials set up, or you can set them in environment variables)
-    dynamodb = boto3.resource('dynamodb', region_name='us-east-1')  # Choose your region
+    # File Handling
+    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'pdf', 'doc', 'docx'}
+
+    # DynamoDB setup
+    dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
     users_table = dynamodb.Table('users')
     vehicles_table = dynamodb.Table('vehicles')
     vehicle_service_history = dynamodb.Table('vehicle_service_history')
 
-    # AWS S3 setup
-    S3_BUCKET_NAME = 'rhegisan'  # Replace with your S3 bucket name
-    S3_REGION = 'us-east-1'  # Use your region
+    # S3 setup
+    S3_BUCKET_NAME = 'rhegisan' 
+    S3_REGION = 'us-east-1'
     s3_client = boto3.client('s3', region_name=S3_REGION)
 
-    # AWS Clients
+    # SQS SETUP
     sqs_client = boto3.client('sqs', region_name='us-east-1')
-    sns_client = boto3.client('sns', region_name='us-east-1')
-    lambda_client = boto3.client('lambda', region_name='us-east-1')
     sqs_queue_url='https://sqs.us-east-1.amazonaws.com/180026181162/appointmentQueue'
+    queue_name = 'appointmentQueue'
 
-    # # Flask configurations
-    # application.config['SECRET_KEY'] = '1234'  # For CSRF protection and session management
-    # application.config['ALLOWED_EXTENSIONS'] =  {'png', 'jpg', 'jpeg', 'gif', 'pdf', 'doc', 'docx'}
+    # SNS SETUP
+    sns_client = boto3.client('sns', region_name='us-east-1')
+    sns_topic_name_maintenance = 'MaintenanceDueTopic'
+    sns_topic_name_appointment = 'appointmentTopic'
+    email_address = 'rhegisanjebas71@gmail.com'
+
+    # CLOUDWATCH SETUP
+    event_client = boto3.client('events', region_name='us-east-1')
+    rule_name = 'DailyMaintenanceCheck'
+
+    # LAMBDA SETUP
+    lambda_client = boto3.client('lambda', region_name='us-east-1')
+    lambda_arn = 'arn:aws:lambda:us-east-1:180026181162:function:VehicleMaintenanceLambda'
 
 
     # Check if file type is allowed
     def allowed_file(filename):
-        return '.' in filename and filename.rsplit('.', 1)[1].lower() in application.config['ALLOWED_EXTENSIONS']
+        return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
     # Function to check if tables exist and create them if not
     def create_tables_if_not_exist():
@@ -99,9 +111,9 @@ def create_application():
         # Check if 'users' table exists
         try:
             client.describe_table(TableName='users')
-            print("Table 'users' already exists.")
+            logger.info("Table 'users' already exists.")
         except client.exceptions.ResourceNotFoundException:
-            print("Table 'users' does not exist. Creating table...")
+            logger.info("Table 'users' does not exist. Creating table...")
             client.create_table(
                 TableName='users',
                 KeySchema=[{'AttributeName': 'username', 'KeyType': 'HASH'}],  # Partition key
@@ -116,9 +128,9 @@ def create_application():
 
         try:
             client.describe_table(TableName='vehicles')
-            print("Table 'vehicles' already exists.")
+            logger.info("Table 'vehicles' already exists.")
         except client.exceptions.ResourceNotFoundException:
-            print("Table 'vehicles' does not exist. Creating table...")
+            logger.info("Table 'vehicles' does not exist. Creating table...")
 
             client.create_table(
                 TableName='vehicles',
@@ -154,7 +166,7 @@ def create_application():
                         'KeySchema': [
                             {
                                 'AttributeName': 'maintenance_date',
-                                'KeyType': 'HASH'  # Make maintenance_date the partition key for the GSI
+                                'KeyType': 'HASH'  # maintenance_date the partition key for the GSI
                             },
                         ],
                         'Projection': {
@@ -170,9 +182,9 @@ def create_application():
             # Check if 'vehicle_service_history' table exists
         try:
             client.describe_table(TableName='vehicle_service_history')
-            print("Table 'vehicle_service_history' already exists.")
+            logger.info("Table 'vehicle_service_history' already exists.")
         except client.exceptions.ResourceNotFoundException:
-            print("Table 'vehicle_service_history' does not exist. Creating table...")
+            logger.info("Table 'vehicle_service_history' does not exist. Creating table...")
             client.create_table(
                 TableName='vehicle_service_history',
                 KeySchema=[
@@ -190,134 +202,129 @@ def create_application():
             )
             
             client.get_waiter('table_exists').wait(TableName='users')
-            print("Table 'users' created successfully.")
+            logger.info("Table 'users' created successfully.")
             client.get_waiter('table_exists').wait(TableName='vehicles')
-            print("Table 'vehicles' created successfully.")
+            logger.info("Table 'vehicles' created successfully.")
             client.get_waiter('table_exists').wait(TableName='vehicle_service_history')
-            print("Table 'vehicle_service_history' created successfully.")
+            logger.info("Table 'vehicle_service_history' created successfully.")
 
-    # Function to ensure that the S3 bucket exists, and create it if not
+    # Function to check that the S3 bucket exists, and create it if donnot exist
     def ensure_bucket_exists():
         try:
             s3_client.head_bucket(Bucket=S3_BUCKET_NAME)
-            print(f"Bucket {S3_BUCKET_NAME} already exists.")
+            logger.info(f"Bucket {S3_BUCKET_NAME} already exists.")
         except s3_client.exceptions.ClientError:
-            print(f"Bucket {S3_BUCKET_NAME} does not exist. Creating bucket...")
+            logger.info(f"Bucket {S3_BUCKET_NAME} does not exist. Creating bucket...")
             if S3_REGION == 'us-east-1':
                 try:
                     s3_client.create_bucket(Bucket=S3_BUCKET_NAME)
-                    print(f"Bucket {S3_BUCKET_NAME} created successfully in {S3_REGION} region.")
+                    logger.info(f"Bucket {S3_BUCKET_NAME} created successfully in {S3_REGION} region.")
                 except ClientError as e:
-                    print(f"Error creating bucket: {e}")
+                    logger.info(f"Error creating bucket: {e}")
                     retry_on_error()
             else:
                 try:
                     s3_client.create_bucket(
                         Bucket=S3_BUCKET_NAME)
-                    print(f"Bucket {S3_BUCKET_NAME} created successfully in {S3_REGION} region.")
+                    logger.info(f"Bucket {S3_BUCKET_NAME} created successfully in {S3_REGION} region.")
                 except ClientError as e:
-                    print(f"Error creating bucket: {e}")
+                    logger.info(f"Error creating bucket: {e}")
                     retry_on_error()
 
     def retry_on_error(max_retries=5, delay=2):
         attempts = 0
         while attempts < max_retries:
             time.sleep(delay)  # Delay before retry
-            print(f"Retrying in {delay} seconds...")
+            logger.info(f"Retrying in {delay} seconds...")
             attempts += 1
             try:
                 ensure_bucket_exists()  # Try creating the bucket again
                 break  # Exit the loop if successful
             except ClientError as e:
                 if attempts == max_retries:
-                    print(f"Failed to create the bucket after {max_retries} attempts.")
+                    logger.info(f"Failed to create the bucket after {max_retries} attempts.")
                     break  # Exit the loop after max retries
                 continue  # Retry on failure
 
-
-
+    # Check whether sqs_queue exists if not then create
     def check_or_create_sqs_queue():
-        queue_name = 'appointmentQueue'
         try:
-            # Try to get the queue URL to check if the queue exists
+            # Trying to get the queue URL to check if the queue exists
             sqs_client.get_queue_url(QueueName=queue_name)
-            print(f"SQS Queue '{queue_name}' already exists.")
+            logger.info(f"SQS Queue '{queue_name}' already exists.")
         except sqs_client.exceptions.QueueDoesNotExist:
-            print(f"SQS Queue '{queue_name}' does not exist. Creating it...")
+            logger.info(f"SQS Queue '{queue_name}' does not exist. Creating it...")
             response = sqs_client.create_queue(QueueName=queue_name)
             queue_url = response['QueueUrl']
             
             # Poll to confirm that the queue has been created
-            print(f"Waiting for SQS Queue '{queue_name}' to be created...")
+            logger.info(f"Waiting for SQS Queue '{queue_name}' to be created...")
             confirm_creation = False
             retries = 0
             while retries < 5 and not confirm_creation:
                 try:
                     sqs_client.get_queue_url(QueueName=queue_name)
-                    print(f"SQS Queue '{queue_name}' created successfully.")
+                    logger.info(f"SQS Queue '{queue_name}' created successfully.")
                     confirm_creation = True
                 except sqs_client.exceptions.QueueDoesNotExist:
                     time.sleep(2)  # Wait before retrying
                     retries += 1
                     if retries == 5:
-                        print("SQS Queue creation failed after 5 retries.")
+                        logger.info("SQS Queue creation failed after 5 retries.")
 
     def check_or_create_sns_maintenanceDueTopic():
-        topic_name = 'MaintenanceDueTopic'
         try:
             # Try to get the topic's attributes to check if it exists
-            sns_client.get_topic_attributes(TopicArn=f'arn:aws:sns:us-east-1:180026181162:{topic_name}')
-            print(f"SNS Topic '{topic_name}' already exists.")
+            sns_client.get_topic_attributes(TopicArn=f'arn:aws:sns:us-east-1:180026181162:{sns_topic_name_maintenance}')
+            logger.info(f"SNS Topic '{sns_topic_name_maintenance}' already exists.")
         except sns_client.exceptions.NotFoundException:
-            print(f"SNS Topic '{topic_name}' does not exist. Creating it...")
-            response = sns_client.create_topic(Name=topic_name)
+            logger.info(f"SNS Topic '{sns_topic_name_maintenance}' does not exist. Creating it...")
+            response = sns_client.create_topic(Name=sns_topic_name_maintenance)
             topic_arn = response['TopicArn']
             
             # Poll to confirm the SNS topic is created
-            print(f"Waiting for SNS Topic '{topic_name}' to be created...")
+            logger.info(f"Waiting for SNS Topic '{sns_topic_name_maintenance}' to be created...")
             confirm_creation = False
             retries = 0
             while retries < 5 and not confirm_creation:
                 try:
                     sns_client.get_topic_attributes(TopicArn=topic_arn)
-                    print(f"SNS Topic '{topic_name}' created successfully.")
+                    logger.info(f"SNS Topic '{sns_topic_name_maintenance}' created successfully.")
                     confirm_creation = True
                 except sns_client.exceptions.NotFoundException:
                     time.sleep(2)  # Wait before retrying
                     retries += 1
                     if retries == 5:
-                        print("SNS Topic creation failed after 5 retries.")
+                        logger.info("SNS Topic creation failed after 5 retries.")
 
     def check_or_create_sns_appointmentTopic():
-        topic_name = 'appointmentTopic'
+        
         try:
             # Try to get the topic's attributes to check if it exists
-            sns_client.get_topic_attributes(TopicArn=f'arn:aws:sns:us-east-1:180026181162:{topic_name}')
-            print(f"SNS Topic '{topic_name}' already exists.")
+            sns_client.get_topic_attributes(TopicArn=f'arn:aws:sns:us-east-1:180026181162:{sns_topic_name_appointment}')
+            logger.info(f"SNS Topic '{sns_topic_name_appointment}' already exists.")
         except sns_client.exceptions.NotFoundException:
-            print(f"SNS Topic '{topic_name}' does not exist. Creating it...")
-            response = sns_client.create_topic(Name=topic_name)
+            logger.info(f"SNS Topic '{sns_topic_name_appointment}' does not exist. Creating it...")
+            response = sns_client.create_topic(Name=sns_topic_name_appointment)
             topic_arn = response['TopicArn']
             
             # Poll to confirm the SNS topic is created
-            print(f"Waiting for SNS Topic '{topic_name}' to be created...")
+            logger.info(f"Waiting for SNS Topic '{sns_topic_name_appointment}' to be created...")
             confirm_creation = False
             retries = 0
             while retries < 5 and not confirm_creation:
                 try:
                     sns_client.get_topic_attributes(TopicArn=topic_arn)
-                    print(f"SNS Topic '{topic_name}' created successfully.")
+                    logger.info(f"SNS Topic '{sns_topic_name_appointment}' created successfully.")
                     confirm_creation = True
                 except sns_client.exceptions.NotFoundException:
                     time.sleep(2)  # Wait before retrying
                     retries += 1
                     if retries == 5:
-                        print("SNS Topic creation failed after 5 retries.")
+                        logger.info("SNS Topic creation failed after 5 retries.")
 
     def zip_lambda_function(source_dir, output_zip):
-        """
-        Zips the contents of a directory for Lambda deployment.
-        """
+        # Zips the contents of a directory for Lambda deployment.
         with zipfile.ZipFile(output_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for root, dirs, files in os.walk(source_dir):
                 for file in files:
@@ -330,12 +337,12 @@ def create_application():
         try:
             # Check if the Lambda function exists
             lambda_client.get_function(FunctionName=function_name)
-            print(f"Lambda function '{function_name}' already exists.")
+            logger.info(f"Lambda function '{function_name}' already exists.")
         except lambda_client.exceptions.ResourceNotFoundException:
-            print(f"Lambda function '{function_name}' does not exist. Creating it...")
+            logger.info(f"Lambda function '{function_name}' does not exist. Creating it...")
             
             # Path to Lambda code
-            source_dir = './lambda'  # Replace with your Lambda code directory
+            source_dir = './lambda' 
             output_zip = 'lambda_function.zip'
 
             # Zip the Lambda function code
@@ -349,13 +356,13 @@ def create_application():
             response = lambda_client.create_function(
                 FunctionName=function_name,
                 Runtime='python3.11',
-                Role='arn:aws:iam::180026181162:role/LabRole',  # Replace with your ARN if different
+                Role='arn:aws:iam::180026181162:role/LabRole',
                 Handler='lambda_function.lambda_handler',
                 Code={'ZipFile': zip_data},
                 Timeout=30,
                 MemorySize=128
             )
-            print(f"Lambda function '{function_name}' created. Waiting for confirmation...")
+            logger.info(f"Lambda function '{function_name}' created. Waiting for confirmation...")
 
             # Poll to confirm that the Lambda function is created
             confirm_creation = False
@@ -363,16 +370,16 @@ def create_application():
             while retries < 5 and not confirm_creation:
                 try:
                     lambda_client.get_function(FunctionName=function_name)
-                    print(f"Lambda function '{function_name}' created successfully.")
+                    logger.info(f"Lambda function '{function_name}' created successfully.")
                     confirm_creation = True
                 except lambda_client.exceptions.ResourceNotFoundException:
                     time.sleep(2)  # Wait before retrying
                     retries += 1
                     if retries == 5:
-                        print("Lambda function creation failed after 5 retries.")
+                        logger.error("Lambda function creation failed after 5 retries.")
         else:
             # Update the existing Lambda function code
-            print(f"Updating code for Lambda function '{function_name}'...")
+            logger.info(f"Updating code for Lambda function '{function_name}'...")
             
             # Path to Lambda code
             source_dir = './lambda'  # Replace with your Lambda code directory
@@ -389,7 +396,7 @@ def create_application():
                 FunctionName=function_name,
                 ZipFile=zip_data
             )
-            print(f"Lambda function '{function_name}' code updated successfully.")
+            logger.info(f"Lambda function '{function_name}' code updated successfully.")
 
     # def subscribe_to_sns(topic_arn, lambda_function_arn, email_address):
     #     """
@@ -407,7 +414,7 @@ def create_application():
     #             for subscription in subscriptions:
     #                 if subscription['Endpoint'] == lambda_function_arn:
     #                     lambda_subscribed = True
-    #                     print(f"Lambda function {lambda_function_arn} is already subscribed.")
+    #                     logger.info(f"Lambda function {lambda_function_arn} is already subscribed.")
     #                     break
 
     #             if not lambda_subscribed:
@@ -417,14 +424,14 @@ def create_application():
     #                     Protocol='lambda',
     #                     Endpoint=lambda_function_arn
     #                 )
-    #                 print(f"Lambda function {lambda_function_arn} successfully subscribed to SNS topic.")
+    #                 logger.info(f"Lambda function {lambda_function_arn} successfully subscribed to SNS topic.")
 
     #             # Check if Email is already subscribed
     #             email_subscribed = False
     #             for subscription in subscriptions:
     #                 if subscription['Endpoint'] == email_address:
     #                     email_subscribed = True
-    #                     print(f"Email address {email_address} is already subscribed.")
+    #                     logger.info(f"Email address {email_address} is already subscribed.")
     #                     break
 
     #             if not email_subscribed:
@@ -434,52 +441,40 @@ def create_application():
     #                     Protocol='email',
     #                     Endpoint=email_address
     #                 )
-    #                 print(f"Email address {email_address} successfully subscribed to SNS topic.")
+    #                 logger.info(f"Email address {email_address} successfully subscribed to SNS topic.")
 
     #             # If both subscriptions are successful, break out of the retry loop
     #             break
 
     #         except Exception as e:
     #             retries += 1
-    #             print(f"Error subscribing Lambda or Email to SNS topic (Attempt {retries}): {e}")
+    #             logger.info(f"Error subscribing Lambda or Email to SNS topic (Attempt {retries}): {e}")
     #             time.sleep(2)  # Retry after a brief pause
 
     #     if retries == 5:
-    #         print("Failed to subscribe Lambda function or Email address after 5 attempts.")
+    #         logger.info("Failed to subscribe Lambda function or Email address after 5 attempts.")
 
     def create_cloudwatch_rule():
-        event_client = boto3.client('events', region_name='us-east-1')
-        rule_name = 'DailyMaintenanceCheck'  # You can keep the same name or change as needed
 
         # Check if the rule already exists
         try:
             response = event_client.describe_rule(Name=rule_name)
-            print(f"CloudWatch rule '{rule_name}' already exists.")
+            logger.info(f"CloudWatch rule '{rule_name}' already exists.")
             rule_arn = response['Arn']
-            print(f"Rule ARN: {rule_arn}")
+            logger.info(f"Rule ARN: {rule_arn}")
         except event_client.exceptions.ResourceNotFoundException:
             # Rule doesn't exist, so we need to create it
-            print(f"CloudWatch rule '{rule_name}' does not exist. Creating it now.")
+            logger.info(f"CloudWatch rule '{rule_name}' does not exist. Creating it now.")
             
-            # Create a CloudWatch Rule that triggers every 3 minutes
+            # Create a CloudWatch Rule that triggers every 24 hours
             rule_response = event_client.put_rule(
                 Name=rule_name,
-                ScheduleExpression='rate(3 minutes)',  # Trigger every 3 minutes
+                ScheduleExpression='rate(24 hours)',
                 State='ENABLED',
             )
             
             rule_arn = rule_response['RuleArn']
-            print(f"CloudWatch rule created with ARN: {rule_arn}")
-
-            # Add permission for CloudWatch to invoke your Lambda
-            lambda_client = boto3.client('lambda')
-            
-            lambda_client.add_permission(
-                FunctionName='VehicleMaintenanceLambda',  # Replace with your Lambda function name
-                StatementId='CloudWatchInvokePermission',
-                Action='lambda:InvokeFunction',
-                Principal='events.amazonaws.com',
-            )
+            logger.info(f"CloudWatch rule created with ARN: {rule_arn}")
             
             # Attach Lambda function as target for CloudWatch rule
             event_client.put_targets(
@@ -487,76 +482,44 @@ def create_application():
                 Targets=[
                     {
                         'Id': '1',
-                        'Arn': 'arn:aws:lambda:us-east-1:180026181162:function:VehicleMaintenanceLambda',  # Your Lambda ARN
+                        'Arn': 'arn:aws:lambda:us-east-1:180026181162:function:VehicleMaintenanceLambda',
                     },
                 ]
             )
 
 
-    # Function to ensure that tables and bucket exist before running the application
+    # Function to ensure that all the aws resources/services exist before running the application
     def setup_resources():
 
-        # topic_arn = 'arn:aws:sns:us-east-1:123456789012:MaintenanceDueTopic'  # Replace with your SNS topic ARN
-        # lambda_function_arn = 'arn:aws:lambda:us-east-1:123456789012:function:VehicleMaintenanceLambda'  # Replace with your Lambda ARN
-        # email_address = 'rhegisanjebas71@gmail.com'  # Replace with your email address
-
+        # Using ThreadPoolExecutor for concurrent execution of AWS resource setup tasks
+        # To ensure that different resources are checked or created in parallel to improve efficiency.
         with concurrent.futures.ThreadPoolExecutor() as executor:
             futures = []
             futures.append(executor.submit(check_or_create_lambda_function))
-            futures.append(executor.submit(create_tables_if_not_exist))  # Submit the DynamoDB table creation task
-            futures.append(executor.submit(ensure_bucket_exists))  # Submit the S3 bucket creation task
+            futures.append(executor.submit(create_tables_if_not_exist)) 
+            futures.append(executor.submit(ensure_bucket_exists))
             futures.append(executor.submit(check_or_create_sns_maintenanceDueTopic))
             futures.append(executor.submit(check_or_create_sns_appointmentTopic))
             futures.append(executor.submit(create_cloudwatch_rule))
             futures.append(executor.submit(check_or_create_sqs_queue))
-            # futures.append(executor.submit(subscribe_to_sns, topic_arn, lambda_function_arn, email_address))
+            # futures.append(executor.submit(subscribe_to_sns, sns_topic_name_maintenance, lambda_arn, email_address))
+            # Wait for all the tasks to complete (block execution until all tasks are done)
             for future in futures:
                 future.result()
 
-    # Call this function to ensure tables and bucket exist before running the application
+    # Call this function ensure that all the aws resources/services exist before running the application
     setup_resources()
 
     # Function to generate presigned URL for an image
     def generate_presigned_url(bucket_name, object_key, expiration=3600):
-        """Generate a presigned URL to share an S3 object
-
-        :param bucket_name: string
-        :param object_key: string
-        :param expiration: Time in seconds for the presigned URL to remain valid (default is 1 hour)
-        :return: Presigned URL as string if successful, else None
-        """
         try:
             response = s3_client.generate_presigned_url('get_object',
                                                         Params={'Bucket': bucket_name, 'Key': object_key},
                                                         ExpiresIn=expiration)
         except ClientError as e:
-            print(f"Error generating presigned URL: {e}")
+            logger.error(f"Error generating presigned URL: {e}")
             return None
         return response
-
-
-
-    def invoke_lambda_function(vehicle_number, maintenance_date):
-        # Prepare the payload for the Lambda function
-        payload = {
-            "vehicle_number": vehicle_number,
-            "maintenance_date": maintenance_date,
-        }
-
-        # Replace with your Lambda ARN
-        lambda_arn = "arn:aws:lambda:us-east-1:180026181162:function:VehicleMaintenanceLambda"
-
-        # Invoke the Lambda function
-        try:
-            response = lambda_client.invoke(
-                FunctionName=lambda_arn,
-                InvocationType='Event',  # 'Event' means asynchronous invocation
-                Payload=json.dumps(payload)
-            )
-            print(f"Lambda invoked successfully for vehicle {vehicle_number}")
-            print(response)
-        except Exception as e:
-            print(f"Error invoking Lambda: {e}")
 
 
     def send_sns_notification(topic_arn="arn:aws:sns:us-east-1:180026181162:MaintenanceDueTopic", message="", subject="Notification"):
@@ -569,57 +532,95 @@ def create_application():
                 Subject=subject
             )
             
-            print(f"SNS notification sent, response: {response}")
+            logger.info(f"SNS notification sent, response: {response}")
         except Exception as e:
-            print(f"Error sending SNS notification: {e}")
+            logger.error(f"Error sending SNS notification: {e}")
 
     def delete_file_from_s3(filename):
-        s3_client = boto3.client('s3')
         try:
             s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=filename)
-            print(f"Deleted {filename} from S3.")
+            logger.info(f"Deleted {filename} from S3.")
         except Exception as e:
-            print(f"Error deleting file {filename} from S3: {e}")
+            logger.error(f"Error deleting file {filename} from S3: {e}")
 
 
-    @application.route('/')
+    @application.route('/', methods=['GET', 'POST'])
     def landing_page():
-        application.logger.info('This is an info log')
-        application.logger.warning('This is a warning log')
-        return render_template('landing.html')
-        
-    # Route to submit an appointment
-    @application.route('/book_appointment', methods=['GET', 'POST'])
-    @login_required
-    def book_appointment():
+        # Initialize form data and error messages
+        error_messages = {}
+        form_data = {
+            'full_name': '',
+            'vehicle_number': '',
+            'vehicle_type': '',
+            'vehicle_make': '',
+            'vehicle_model': '',
+            'maintenance_date': '',
+            'email': '',
+            'phone': ''
+        }
+
         if request.method == 'POST':
             # Capture appointment details from the form
-            customer_fullname = request.form['full_name']
-            vehicle_number = request.form['vehicle_number']
-            vehicle_type = request.form['vehicle_type']
-            vehicle_make = request.form['vehicle_make']
-            vehicle_model = request.form['vehicle_model']
-            maintenance_date = request.form['maintenance_date']
-            customer_email = request.form['email']
-            customer_phone = request.form['phone']
+            name = form_data['full_name'] = request.form['full_name']
+            form_data['vehicle_number'] = request.form['vehicle_number']
+            form_data['vehicle_type'] = request.form['vehicle_type']
+            form_data['vehicle_make'] = request.form['vehicle_make']
+            form_data['vehicle_model'] = request.form['vehicle_model']
+            form_data['maintenance_date'] = request.form['maintenance_date']
+            form_data['email'] = request.form['email']
+            form_data['phone'] = request.form['phone']
+
+            # Validate Full Name
+            if not FieldValidator.validate_full_name(form_data['full_name']):
+                error_messages['full_name'] = 'Invalid full name. Name should be alphabetic and properly formatted. John Doe'
+
+            # Validate Email
+            if not FieldValidator.validate_email(form_data['email']):
+                error_messages['email'] = 'Invalid email address. Email must be in format x@x.x'
+
+            # Validate Phone Number
+            if not FieldValidator.validate_phone_number(form_data['phone'], country_code='IE'):
+                error_messages['phone'] = 'Invalid phone number format. Example: +353123456789 or 0123456789.'
+
+            # Validate Vehicle Number
+            if not FieldValidator.validate_vehicle_number(form_data['vehicle_number']):
+                error_messages['vehicle_number'] = "Invalid vehicle number, the format must be XX-XX-1234 (e.g., AB-01-1234)"
+            
+            # Validate Vehicle Type
+            if not FieldValidator.validate_vehicle_type(form_data['vehicle_type']):
+                error_messages['vehicle_type'] = "Invalid vehicle type. Please choose a valid type. 'car', 'truck', 'motorcycle', 'bus', 'van', 'bike', 'cycle', 'train']"
+            
+            # Validate Vehicle Make
+            if not FieldValidator.validate_vehicle_make(form_data['vehicle_make']):
+                error_messages['vehicle_make'] = "Vehicle make must contain only alphabetic characters."
+            
+            # Validate Vehicle Model
+            if not FieldValidator.validate_vehicle_model(form_data['vehicle_model']):
+                error_messages['vehicle_model'] = "Vehicle model must be between 1 and 20 characters."
+
+            # If there are validation errors, render the form again with the error messages
+            if error_messages:
+                return render_template('landing_page.html', error_messages=error_messages, form_data=form_data)
 
             # Create the appointment details message
             appointment_message = {
-                'customer_fullname': customer_fullname,
-                'vehicle_number': vehicle_number,
-                'vehicle_type': vehicle_type,
-                'vehicle_make': vehicle_make,
-                'vehicle_model': vehicle_model,
-                'maintenance_date': maintenance_date,
-                'customer_email': customer_email,
-                'customer_phone': customer_phone
+                'customer_fullname': form_data['full_name'],
+                'vehicle_number': form_data['vehicle_number'],
+                'vehicle_type': form_data['vehicle_type'],
+                'vehicle_make': form_data['vehicle_make'],
+                'vehicle_model': form_data['vehicle_model'],
+                'maintenance_date': form_data['maintenance_date'],
+                'customer_email': form_data['email'],
+                'customer_phone': form_data['phone']
             }
 
-            # Send appointment message to SQS
-            response = sqs_client.send_message(
+            # Send appointment to SQS
+            sqs_client.send_message(
                 QueueUrl=sqs_queue_url,
                 MessageBody=json.dumps(appointment_message)
             )
+
+            logger.info(f"A new appointment data has been sent to SQS, customer name - {name}")
 
             # Send SNS notification (email to the company)
             sns_client.publish(
@@ -628,19 +629,25 @@ def create_application():
                 Subject="New Appointment Request"
             )
 
+            logger.info(f"A new appointment data has been sent to SNS topic, customer name - {name}")
+
+            # Flash success message and redirect to the same page
             flash('Appointment request submitted successfully! We will contact you soon.', 'success')
-            return redirect(url_for('landing_page'))  # Redirect to the home page
+            return redirect(url_for('landing_page'))  # Redirect to the landing page (root route)
 
-        return render_template('landing_page.html')
+        # Render the form with any error messages or pre-filled data
+        return render_template('landing_page.html', error_messages=error_messages, form_data=form_data)
 
+    # To download the appointments from the queue in a txt file
     @application.route('/appointments', methods=['GET'])
-    def appointments_page():
+    @login_required
+    def appointments():
         try:
             # Fetch messages from SQS
             response = sqs_client.receive_message(
                 QueueUrl=sqs_queue_url,
                 MaxNumberOfMessages=10,  # Fetch up to 10 messages
-                WaitTimeSeconds=10      # Enable long polling
+                WaitTimeSeconds=10        # Enable long polling
             )
 
             appointments = []
@@ -655,44 +662,29 @@ def create_application():
                         ReceiptHandle=message['ReceiptHandle']
                     )
 
-            return render_template('appointments.html', appointments=appointments)
-        except Exception as e:
-            print(f"Error polling appointments: {e}")
-            return render_template('appointments.html', appointments=[], error="Failed to fetch appointments")
-
-
-    @application.route('/download_appointments_txt', methods=['GET'])
-    def download_appointments_txt():
-        try:
-            # Fetch messages from SQS (same logic as in your appointments page)
-            response = sqs_client.receive_message(
-                QueueUrl=sqs_queue_url,
-                MaxNumberOfMessages=10,  # Fetch up to 10 messages
-                WaitTimeSeconds=2      # Enable long polling
-            )
-
-            appointments = []
-            if 'Messages' in response:
-                for message in response['Messages']:
-                    body = json.loads(message['Body'])  # Parse JSON body
-                    appointments.append(body)
-
             # Convert the appointments list to JSON format (pretty-printed)
             json_data = json.dumps(appointments, indent=2)
 
             # Create a response with the JSON data as a .txt file
             response = Response(json_data, mimetype='text/plain')
             response.headers['Content-Disposition'] = 'attachment; filename=appointments.txt'
+
+            # Return the text file to the user
             return response
+
         except Exception as e:
-            print(f"Error downloading appointments: {e}")
+            logger.error(f"Error downloading appointments: {e}")
             return "Failed to download appointments data."
 
 
+    # Route for creating a new user which is accessible only to admin
     @application.route('/signup', methods=['GET', 'POST'])
+    @login_required
     def signup():
         error_messages = {}
 
+        # Checking the user
+        # Only admin can view/edit the signup page
         if not current_user.is_authenticated or current_user.role != 'admin':
             flash('You do not have permission to access this page.', 'danger')
             return redirect(url_for('landing_page'))
@@ -712,11 +704,11 @@ def create_application():
 
             # Validate Email
             if not FieldValidator.validate_email(email):
-                error_messages['email'] = 'Invalid email address.'
+                error_messages['email'] = 'Invalid email address. Email must be in format x@x.x'
 
             # Validate Phone Number
             if not FieldValidator.validate_phone_number(phone_number, country_code='IE'):
-                error_messages['phone_number'] = 'Invalid phone number format. +353 or 0 followed by 9 digits'
+                error_messages['phone_number'] = 'Invalid phone number format. Example: +353123456789 or 0123456789.'
 
             # Validate Password
             if password != confirm_password:
@@ -745,6 +737,7 @@ def create_application():
             # Store the user in DynamoDB
             users_table.put_item(Item=user_item)
 
+            logger.info(f"Successfully Signed in {username}")
             flash('Account created successfully! Please log in.', 'success')
             return redirect(url_for('login'))
 
@@ -771,11 +764,11 @@ def create_application():
             
             # Validate full name
             if not FieldValidator.validate_full_name(full_name):
-                error_messages['full_name'] = 'Invalid full name. Name should only contain alphabets and spaces, e.g., John Doe.'
+                error_messages['full_name'] = 'Invalid full name. Name should only contain letters and spaces, and each part should start with a capital letter e.g., John Doe.'
             
             # Validate email
             if not FieldValidator.validate_email(email):
-                error_messages['email'] = 'Invalid email address.'
+                error_messages['email'] = 'Invalid email address. Email must be in format x@x.x'
 
             # Validate phone number
             if not FieldValidator.validate_phone_number(phone_number, country_code='IE'):
@@ -801,7 +794,7 @@ def create_application():
                 hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
             
             # Update the user's profile in DynamoDB
-            update_expression = "SET full_name = :full_name, email = :email, phone_number = :phone_number"
+            update_expression = "SET full_name = :full_name, email = :email, phone_number = :phone_number, #role = :role"
             expression_values = {
                 ':full_name': full_name,
                 ':email': email,
@@ -814,27 +807,44 @@ def create_application():
                 update_expression += ", password = :password"
                 expression_values[':password'] = boto3.dynamodb.types.Binary(hashed_password)
 
-            # Perform the update in DynamoDB
-            users_table.update_item(
-                Key={'username': current_user.id},
-                UpdateExpression=update_expression,
-                ExpressionAttributeValues=expression_values
-            )
 
-            flash('Profile updated successfully!', 'success')
-            return redirect(url_for('home'))
+            # Add expression attribute names for reserved words
+            expression_attribute_names = {
+                '#role': 'role'  # Mapping placeholder to the actual reserved keyword 'role'
+        }
+            
+            try:
+                # Perform the update in DynamoDB
+                users_table.update_item(
+                    Key={'username': current_user.id},
+                    UpdateExpression=update_expression,
+                    ExpressionAttributeValues=expression_values,
+                    ExpressionAttributeNames=expression_attribute_names  # Add this mapping
+                )
+                logger.info(f"Profile updated for user {current_user.id} successfully!")
+                flash('Profile updated successfully!', 'success')
+                return redirect(url_for('home'))
+            except Exception as e:
+                logger.error(f"Error updating profile: {e}")
+                flash('An error occurred while updating your profile.', 'danger')
+                return redirect(url_for('edit_profile'))
         
         # Fetch the current user's information from DynamoDB
-        user = users_table.get_item(Key={'username': current_user.id})['Item']
-        
+        try:
+            user = users_table.get_item(Key={'username': current_user.id})['Item']
+        except Exception as e:
+            logger.error(f"Error fetching user data: {e}")
+            flash('Error fetching your data. Please try again later.', 'danger')
+            return redirect(url_for('home'))
+
         # Pass the current values of full_name, email, phone_number to the template
         return render_template('edit_profile.html', 
-                            username=user['username'], 
-                            full_name=user['full_name'], 
-                            email=user['email'], 
-                            phone_number=user['phone_number'],
-                            role=user['role'],
-                            error_messages={})
+                           username=user['username'], 
+                           full_name=user['full_name'], 
+                           email=user['email'], 
+                           phone_number=user['phone_number'],
+                           role=user['role'],
+                           error_messages={})
 
 
     # Login Route
@@ -848,6 +858,7 @@ def create_application():
             user = User.get(username)
             if user and bcrypt.checkpw(password.encode('utf-8'), user.password.value):
                 login_user(user)  # Pass the `User` object
+                logger.info(f"{user} Successfully logged in")
                 flash('Login successful!', 'success')
                 return redirect(url_for('home'))
             else:
@@ -859,7 +870,6 @@ def create_application():
     @application.route('/home', methods=['GET', 'POST'])
     @login_required
     def home():
-        application.logger.info("Home page accessed.")
         # Fetch vehicles linked to the current user
         response = vehicles_table.query(
             IndexName='username-index',  # Using the GSI on 'username'
@@ -890,7 +900,7 @@ def create_application():
 
     # Function to upload files to S3
     def upload_file_to_s3(file):
-        """Uploads a single file to S3 and returns the file path."""
+        # Uploading a single file to S3 and returns the file path.
         # Generate a secure filename
         filename = secure_filename(file.filename)
 
@@ -900,9 +910,10 @@ def create_application():
         try:
             # Upload the file to S3
             s3_client.upload_fileobj(file, S3_BUCKET_NAME, s3_user_folder)
-            return s3_user_folder  # Return the S3 file path
+            logger.info(f"Successfully uploaded {filename} to S3 at {s3_user_folder}")
+            return s3_user_folder
         except Exception as e:
-            print(f"Error uploading file to S3: {e}")
+            logger.error(f"Error uploading file to S3: {e}")
             return None
 
     # Vehicle Maintenance Route
@@ -918,7 +929,10 @@ def create_application():
             license_plate_number = request.form['license_plate_number']
             maintenance_date = datetime.strptime(request.form['maintenance_date'], '%Y-%m-%d')
 
-            # Validate fields using your custom validator (skip validation for maintenance_date and bill_image)
+            # Validate fields using your custom validator
+            if not FieldValidator.validate_vehicle_number(vehicle_number):
+                error_messages['vehicle_number'] = "Invalid vehicle number, the format must be XX-XX-1234 (e.g., AB-01-1234)"
+            
             if not FieldValidator.validate_vehicle_type(vehicle_type):
                 error_messages['vehicle_type'] = "Invalid vehicle type. Please choose a valid type. 'car', 'truck', 'motorcycle', 'bus', 'van', 'bike', 'cycle', 'train']"
             
@@ -929,7 +943,7 @@ def create_application():
                 error_messages['vehicle_model'] = "Vehicle model must be between 1 and 20 characters."
             
             if not FieldValidator.validate_license_plate(license_plate_number):
-                error_messages['license_plate_number'] = "Invalid license plate number."
+                error_messages['license_plate_number'] = "Invalid license plate number. Format should be '1234567' or 'ABC-1234' or 'ABC 1234' "
 
             if error_messages:
                 # If there are validation errors, render the form again with error messages
@@ -983,7 +997,7 @@ def create_application():
                 subject="Vehicle Added Notification"
             )
 
-
+            logger.info(f"Successfully added Vehicle maintenance details of vehicle {vehicle_number}")
             flash('Vehicle maintenance details added successfully!', 'success')
             return redirect(url_for('home'))  # Redirect to the home page where the image is displayed
 
@@ -1025,7 +1039,7 @@ def create_application():
                 error_messages['vehicle_model'] = "Vehicle model must be between 1 and 20 characters."
             
             if not FieldValidator.validate_license_plate(license_plate_number):
-                error_messages['license_plate_number'] = "Invalid license plate number."
+                error_messages['license_plate_number'] = "Invalid license plate number. Format should be '1234567' or 'ABC-1234' or 'ABC 1234' "
 
             if error_messages:
                 # If there are validation errors, render the form again with error messages
@@ -1072,8 +1086,8 @@ def create_application():
             )
 
             send_sns_notification(vehicle_number, maintenance_date)
-            # invoke_lambda_function(vehicle_number, maintenance_date.isoformat())
-
+            
+            logger.info(f"Successfully edited Vehicle maintenance details of vehicle {vehicle_number}")
             flash('Vehicle details updated successfully!', 'success')
 
             return redirect(url_for('home')) 
@@ -1101,6 +1115,7 @@ def create_application():
         if bill_image_filename:
             delete_file_from_s3(bill_image_filename)
 
+        logger.info(f"Successfully deleted Vehicle - {vehicle_number}")
         flash('Vehicle deleted successfully!', 'success')
         return redirect(url_for('home'))
 
@@ -1109,22 +1124,22 @@ def create_application():
     @login_required
     def add_service_history():
         if request.method == 'POST':
-            # Get the form data
-            vehicle_number = request.form['vehicle_number']  # User inputs the vehicle number here
+            # Getting the form data
+            vehicle_number = request.form['vehicle_number']
             service_date = request.form['service_date']
             service_description = request.form['service_description']
-            service_cost = Decimal(request.form['service_cost'])  # Use Decimal for cost precision
+            service_cost = Decimal(request.form['service_cost'])  # Used Decimal for cost precision
 
-            # Add service history to the vehicle_service_history table
+            # Adding service history to the vehicle_service_history table
             vehicle_service_history.put_item(
                 Item={
                     'vehicle_number': vehicle_number,
                     'service_date': service_date,
                     'service_description': service_description,
-                    'service_cost': service_cost,  # Store as string or Decimal in DynamoDB
+                    'service_cost': service_cost,  # Storing as string or Decimal in DynamoDB
                 }
             )
-
+            logger.info(f"Service history added successfully for vehicle - {vehicle_number}")
             flash('Service history added successfully!', 'success')
             return redirect(url_for('view_service_history', vehicle_number=vehicle_number))  # Redirect back to the view history page
         
@@ -1141,14 +1156,12 @@ def create_application():
 
         service_history = service_response.get('Items', [])
 
-        # Fetch vehicle details (optional, to display vehicle info along with service history)
+        # Fetch vehicle details
         vehicle_response = vehicles_table.get_item(
             Key={'vehicle_number': vehicle_number, 'username': current_user.id}
         )
 
         vehicle = vehicle_response.get('Item', {})
-
-        # Make sure to pass vehicle_number to the template
         return render_template('view_service_history.html', service_history=service_history, vehicle=vehicle, vehicle_number=vehicle_number)
 
 
@@ -1190,6 +1203,7 @@ def create_application():
                 }
             )
 
+            logger.info(f"Service history updated successfully for vehicle - {vehicle_number}")
             flash('Service history updated successfully!', 'success')
             return redirect(url_for('view_service_history', vehicle_number=vehicle_number))
 
@@ -1206,7 +1220,7 @@ def create_application():
                 'service_date': service_date
             }
         )
-
+        logger.info(f"Service history deleted successfully for vehicle - {vehicle_number}")
         flash('Service history deleted successfully!', 'success')
         return redirect(url_for('view_service_history', vehicle_number=vehicle_number))
 
@@ -1218,13 +1232,13 @@ def create_application():
         vehicle_make = request.args.get('vehicle_make', '')
         license_plate_number = request.args.get('license_plate_number', '')
         maintenance_date = request.args.get('maintenance_date', '')
-        vehicle_number = request.args.get('vehicle_number', '')  # Add vehicle_number filter
+        vehicle_number = request.args.get('vehicle_number', '')
 
         # Initialize the filter expression list and expression values
         filter_expression = []
         expression_values = {}
 
-        # Add filters for vehicle type, make, license plate number, maintenance date, and vehicle number
+        # Adding filters for vehicle type, make, license plate number, maintenance date, and vehicle number
         if vehicle_type:
             filter_expression.append("vehicle_type = :vehicle_type")
             expression_values[':vehicle_type'] = vehicle_type
@@ -1238,7 +1252,7 @@ def create_application():
             expression_values[':license_plate_number'] = license_plate_number
 
         if maintenance_date:
-            # Ensure the maintenance_date format is YYYY-MM-DDT00:00:00 for the comparison
+            # The maintenance_date format is YYYY-MM-DDT00:00:00 for the comparison
             formatted_date = f"{maintenance_date}T00:00:00"
             filter_expression.append("maintenance_date = :maintenance_date")
             expression_values[':maintenance_date'] = formatted_date
@@ -1247,13 +1261,13 @@ def create_application():
             filter_expression.append("vehicle_number = :vehicle_number")
             expression_values[':vehicle_number'] = vehicle_number
 
-        # Combine the filter expressions using "AND"
+        # Combining the filter expressions using "AND"
         if filter_expression:
             filter_expression = " AND ".join(filter_expression)
         else:
             filter_expression = None
 
-        # Perform the scan query based on the filters
+        # Performing the scan query based on the filters
         if filter_expression:
             response = vehicles_table.scan(
                 FilterExpression=filter_expression,
