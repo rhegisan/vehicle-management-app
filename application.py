@@ -522,7 +522,7 @@ def create_application():
         return response
 
 
-    def send_sns_notification(topic_arn="arn:aws:sns:us-east-1:180026181162:MaintenanceDueTopic", message="", subject="Notification"):
+    def send_sns_notification(topic_arn="arn:aws:sns:us-east-1:180026181162:appointmentTopic", message="", subject="Notification"):
         try:
             topic_arn = ''
             # Send the message to the SNS Topic
@@ -980,29 +980,11 @@ def create_application():
             if bill_image_filename:
                 image_url = generate_presigned_url(S3_BUCKET_NAME, bill_image_filename)
 
-            
-            # send_sns_notification(vehicle_number, maintenance_date)
-            # invoke_lambda_function(vehicle_number, maintenance_date.isoformat)
-            # Prepare the message to send
-            message = {
-                "vehicle_number": vehicle_number,
-                "maintenance_date": maintenance_date.isoformat(),
-                "action": "Vehicle Added"
-            }
-
-            # Send SNS notification when a vehicle is added
-            send_sns_notification(
-                topic_arn="arn:aws:sns:us-east-1:180026181162:MaintenanceDueTopic",
-                message=message,
-                subject="Vehicle Added Notification"
-            )
-
             logger.info(f"Successfully added Vehicle maintenance details of vehicle {vehicle_number}")
             flash('Vehicle maintenance details added successfully!', 'success')
-            return redirect(url_for('home'))  # Redirect to the home page where the image is displayed
+            return redirect(url_for('home'))
 
         return render_template('vehicle.html', error_messages=error_messages)
-
 
 
     @application.route('/edit_vehicle/<vehicle_number>', methods=['GET', 'POST'])
@@ -1084,8 +1066,6 @@ def create_application():
                 UpdateExpression=update_expression,
                 ExpressionAttributeValues=expression_values
             )
-
-            send_sns_notification(vehicle_number, maintenance_date)
             
             logger.info(f"Successfully edited Vehicle maintenance details of vehicle {vehicle_number}")
             flash('Vehicle details updated successfully!', 'success')
