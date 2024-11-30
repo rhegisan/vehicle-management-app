@@ -188,12 +188,10 @@ def create_application():
             client.create_table(
                 TableName='vehicle_service_history',
                 KeySchema=[
-                    {'AttributeName': 'vehicle_number', 'KeyType': 'HASH'},  # Partition key
-                    {'AttributeName': 'service_date', 'KeyType': 'RANGE'}  # Sort key (service_date)
+                    {'AttributeName': 'vehicle_number', 'KeyType': 'HASH'}# Partition key
                 ],
                 AttributeDefinitions=[
-                    {'AttributeName': 'vehicle_number', 'AttributeType': 'S'},
-                    {'AttributeName': 'service_date', 'AttributeType': 'S'}
+                    {'AttributeName': 'vehicle_number', 'AttributeType': 'S'}
                 ],
                 ProvisionedThroughput={
                     'ReadCapacityUnits': 5,
@@ -1103,17 +1101,34 @@ def create_application():
     @application.route('/add_service_history', methods=['GET', 'POST'])
     @login_required
     def add_service_history():
+        error_messages = {}
         if request.method == 'POST':
             # Getting the form data
             vehicle_number = request.form['vehicle_number']
+            full_name = request.form['full_name']
+            phone_number = request.form['phone_number']
             service_date = request.form['service_date']
             service_description = request.form['service_description']
             service_cost = Decimal(request.form['service_cost'])  # Used Decimal for cost precision
+
+            # Validate full name
+            if not FieldValidator.validate_full_name(full_name):
+                error_messages['full_name'] = 'Invalid full name. Name should only contain letters and spaces, and each part should start with a capital letter e.g., John Doe.'
+            
+            # Validate phone number
+            if not FieldValidator.validate_phone_number(phone_number, country_code='IE'):
+                error_messages['phone_number'] = 'Invalid phone number format. Example: +353123456789 or 0123456789.'
+
+            if error_messages:
+                return render_template('add_service_history.html', error_messages=error_messages)
+                                     
 
             # Adding service history to the vehicle_service_history table
             vehicle_service_history.put_item(
                 Item={
                     'vehicle_number': vehicle_number,
+                    'full_name': full_name,
+                    'phone_number': phone_number,
                     'service_date': service_date,
                     'service_description': service_description,
                     'service_cost': service_cost,  # Storing as string or Decimal in DynamoDB
@@ -1123,7 +1138,7 @@ def create_application():
             flash('Service history added successfully!', 'success')
             return redirect(url_for('view_service_history', vehicle_number=vehicle_number))  # Redirect back to the view history page
         
-        return render_template('add_service_history.html')
+        return render_template('add_service_history.html', error_messages=error_messages)
 
 
     @application.route('/view_service_history/<vehicle_number>')
@@ -1149,11 +1164,11 @@ def create_application():
     @application.route('/edit_service_history/<vehicle_number>/<service_date>', methods=['GET', 'POST'])
     @login_required
     def edit_service_history(vehicle_number, service_date):
+        error_messages = {}
         # Fetch the service history based on vehicle_number and service_date
         response = vehicle_service_history.get_item(
             Key={
-                'vehicle_number': vehicle_number,
-                'service_date': service_date
+                'vehicle_number': vehicle_number
             }
         )
 
@@ -1165,18 +1180,32 @@ def create_application():
 
         if request.method == 'POST':
             # Get the updated form data
+            updated_full_name = request.form['full_name']
+            updated_phone_number = request.form['phone_number']
             updated_service_date = request.form['service_date']
             updated_service_description = request.form['service_description']
             updated_service_cost = Decimal(request.form['service_cost'])  # Use Decimal for precision
 
+            # Validate full name
+            if not FieldValidator.validate_full_name(updated_full_name):
+                error_messages['full_name'] = 'Invalid full name. Name should only contain letters and spaces, and each part should start with a capital letter e.g., John Doe.'
+            
+            # Validate phone number
+            if not FieldValidator.validate_phone_number(updated_phone_number, country_code='IE'):
+                error_messages['phone_number'] = 'Invalid phone number format. Example: +353123456789 or 0123456789.'
+
+            if error_messages:
+                return render_template('edit_service_history.html', error_messages=error_messages, service=service, vehicle_number=vehicle_number)
+
             # Update the service history item in DynamoDB
             vehicle_service_history.update_item(
                 Key={
-                    'vehicle_number': vehicle_number,
-                    'service_date': service_date
+                    'vehicle_number': vehicle_number
                 },
-                UpdateExpression="SET service_date = :sd, service_description = :sd_desc, service_cost = :sd_cost",
+                UpdateExpression="SET full_name = :fn, phone_number = :pn, service_date = :sd, service_description = :sd_desc, service_cost = :sd_cost",
                 ExpressionAttributeValues={
+                    ':fn': updated_full_name,
+                    ':pn': updated_phone_number,
                     ':sd': updated_service_date,
                     ':sd_desc': updated_service_description,
                     ':sd_cost': updated_service_cost
@@ -1187,7 +1216,7 @@ def create_application():
             flash('Service history updated successfully!', 'success')
             return redirect(url_for('view_service_history', vehicle_number=vehicle_number))
 
-        return render_template('edit_service_history.html', service=service, vehicle_number=vehicle_number)
+        return render_template('edit_service_history.html', service=service, vehicle_number=vehicle_number, error_messages=error_messages)
 
 
     @application.route('/delete_service_history/<vehicle_number>/<service_date>', methods=['POST'])
@@ -1196,8 +1225,7 @@ def create_application():
         # Delete the service history item from DynamoDB
         vehicle_service_history.delete_item(
             Key={
-                'vehicle_number': vehicle_number,
-                'service_date': service_date
+                'vehicle_number': vehicle_number
             }
         )
         logger.info(f"Service history deleted successfully for vehicle - {vehicle_number}")
@@ -1213,6 +1241,7 @@ def create_application():
         license_plate_number = request.args.get('license_plate_number', '')
         maintenance_date = request.args.get('maintenance_date', '')
         vehicle_number = request.args.get('vehicle_number', '')
+
 
         # Initialize the filter expression list and expression values
         filter_expression = []

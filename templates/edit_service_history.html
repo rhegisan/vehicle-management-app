@@ -6,6 +6,16 @@
     
     <form method="POST">
       <div class="mb-3">
+        <label for="full_name" class="form-label">Full Name</label>
+        <input type="text" class="form-control" id="full_name" name="full_name" value="{{ service.full_name }}" required>
+        <small class="form-text text-danger">{{ error_messages.get('full_name', '') }}</small>
+      </div>
+      <div class="mb-3">
+        <label for="phone_number" class="form-label">Phone Number</label>
+        <input type="text" class="form-control" id="phone_number" name="phone_number" value="{{ service.phone_number }}" required>
+        <small class="form-text text-danger">{{ error_messages.get('phone_number', '') }}</small>
+      </div>
+      <div class="mb-3">
         <label for="service_date" class="form-label">Service Date</label>
         <input type="date" class="form-control" id="service_date" name="service_date" value="{{ service.service_date }}" required>
       </div>

@@ -9,6 +9,8 @@
       <table class="table table-striped">
         <thead>
           <tr>
+            <th scope="col">Full Name</th>
+            <th scope="col">Phone Number</th>
             <th scope="col">Service Date</th>
             <th scope="col">Service Description</th>
             <th scope="col">Cost ($)</th>
@@ -18,6 +20,8 @@
         <tbody>
           {% for service in service_history %}
             <tr>
+              <td>{{ service.full_name }}</td>
+              <td>{{ service.phone_number }}</td>
               <td>{{ service.service_date }}</td>
               <td>{{ service.service_description }}</td>
               <td>{{ service.service_cost }}</td>
